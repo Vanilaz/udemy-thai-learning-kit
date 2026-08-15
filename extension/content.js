@@ -34,6 +34,9 @@
     // injects it as Udemy renders one question at a time.
     quizMap: null,
     quizObserver: null,
+    // Bumped on every lecture change. Work started under an older value is
+    // abandoned instead of being written into the page the user has moved to.
+    generation: 0,
   };
 
   const log = (...args) => console.log("[udth]", ...args);
@@ -48,7 +51,65 @@
     if (/context invalidated|receiving end does not exist/i.test(message)) {
       return "ส่วนขยายเพิ่งถูกอัปเดต — กด F5 รีเฟรชหน้านี้หนึ่งครั้ง";
     }
-    return "ติดต่อส่วนขยายไม่ได้ ลองรีเฟรชหน้า";
+    if (/message channel closed|message port closed/i.test(message)) {
+      return "การเชื่อมต่อกับส่วนขยายหลุด กำลังลองใหม่ ...";
+    }
+    return `ติดต่อส่วนขยายไม่ได้: ${message.slice(0, 80)}`;
+  }
+
+  // Every failure the user can actually act on, phrased as what to do next.
+  function describeTranslateError(err) {
+    const message = String((err && err.message) || err || "");
+    if (/Failed to fetch|NetworkError|ECONNREFUSED/i.test(message)) {
+      return "ยังไม่ได้เปิดเซิร์ฟเวอร์แปล — ดับเบิลคลิก start-server.cmd";
+    }
+    if (/context invalidated|receiving end does not exist|message channel closed/i.test(message)) {
+      return describeSendError(err);
+    }
+    return `แปลไม่สำเร็จ: ${message.slice(0, 120)}`;
+  }
+
+  const POLL_INTERVAL_MS = 2000;
+  const POLL_TIMEOUT_MS = 15 * 60 * 1000;
+
+  class Stale extends Error {}
+
+  // Ask the service worker to start a job, then wait here rather than there.
+  // Each message is a single short round trip, which is all an MV3 worker can
+  // reliably serve; the waiting happens in the page, which Chrome never kills.
+  //
+  // `generation` guards against the user moving to another lecture mid-flight:
+  // when it no longer matches, the result belongs to a page that is gone.
+  async function requestTranslation(payload, generation, onProgress) {
+    const started = await chrome.runtime.sendMessage({ type: "startJob", payload });
+    if (generation !== state.generation) throw new Stale();
+    if (!started || !started.ok) {
+      throw new Error((started && started.error) || "เริ่มงานแปลไม่สำเร็จ");
+    }
+
+    const job = started.data || {};
+    if (job.status === "done" && job.cues) return job.cues;
+
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await sleep(POLL_INTERVAL_MS);
+      if (generation !== state.generation) throw new Stale();
+
+      const polled = await chrome.runtime.sendMessage({
+        type: "jobStatus",
+        jobId: job.job,
+      });
+      if (generation !== state.generation) throw new Stale();
+      if (!polled || !polled.ok) {
+        throw new Error((polled && polled.error) || "อ่านสถานะงานไม่ได้");
+      }
+
+      const info = polled.data || {};
+      if (info.status === "done") return info.cues || [];
+      if (info.status === "error") throw new Error(info.error || "แปลไม่สำเร็จ");
+      if (onProgress) onProgress(info.progress || 0, info.chunks || 0);
+    }
+    throw new Error("แปลนานเกินไป ยกเลิกแล้ว");
   }
 
   // ---------------------------------------------------------------- overlay
@@ -266,6 +327,8 @@
   }
 
   async function start() {
+    // Anything still in flight from the previous lecture is now stale.
+    state.generation += 1;
     cleanupArticle();
     cleanupQuiz();
 
@@ -281,6 +344,7 @@
   }
 
   async function startVideo(asset) {
+    const generation = state.generation;
     const video = await waitForVideo();
     if (!video) {
       log("ไม่พบวิดีโอในหน้านี้");
@@ -367,37 +431,30 @@
         : `กำลังแปล ${cues.length} บรรทัดเป็นไทย ... (ครั้งแรกใช้เวลาสักครู่)`
     );
 
-    let response;
+    let translated;
     try {
-      response = await chrome.runtime.sendMessage({
-        type: "translate",
-        payload: {
+      translated = await requestTranslation(
+        {
           course: courseSlug(),
           lecture: lectureId(), // stable cache identity, unlike the title
           title: lessonTitle(),
           cues,
           force,
         },
-      });
-    } catch (err) {
-      state.status = "error";
-      renderStatus(describeSendError(err), "error");
-      return;
-    }
-
-    if (!response || !response.ok) {
-      state.status = "error";
-      const detail = (response && response.error) || "ไม่ทราบสาเหตุ";
-      renderStatus(
-        /Failed to fetch|NetworkError/i.test(detail)
-          ? "ยังไม่ได้เปิดเซิร์ฟเวอร์แปล — ดับเบิลคลิก start-server.cmd"
-          : `แปลไม่สำเร็จ: ${detail}`,
-        "error"
+        generation,
+        (done, total) => {
+          const suffix = total ? ` (${done}/${total})` : "";
+          renderStatus(`กำลังแปลเป็นไทย ...${suffix}`);
+        }
       );
+    } catch (err) {
+      if (err instanceof Stale) return; // user moved on; nothing to report
+      state.status = "error";
+      renderStatus(describeTranslateError(err), "error");
       return;
     }
 
-    state.cues = response.cues || [];
+    state.cues = translated || [];
     state.status = "ready";
     state.activeIndex = -1;
     syncNativeCaptions();
@@ -465,6 +522,7 @@
   }
 
   async function startQuiz(id) {
+    const generation = state.generation;
     const assessments = await fetchAssessments(id);
     if (!assessments.length) {
       log("แบบทดสอบนี้ไม่มีข้อคำถาม");
@@ -489,11 +547,10 @@
       /* storage unavailable — fall back to using the cache */
     }
 
-    let response;
+    let translated;
     try {
-      response = await chrome.runtime.sendMessage({
-        type: "translate",
-        payload: {
+      translated = await requestTranslation(
+        {
           course: courseSlug(),
           lecture: `quiz-${id}`, // stable cache identity, unlike the title
           title: `แบบทดสอบ ${id}`,
@@ -501,28 +558,21 @@
           mode: "doc",
           force,
         },
-      });
-    } catch (err) {
-      state.status = "error";
-      setQuizBanner(banner, describeSendError(err), "error");
-      return;
-    }
-
-    if (!response || !response.ok) {
-      state.status = "error";
-      const detail = (response && response.error) || "ไม่ทราบสาเหตุ";
-      setQuizBanner(
-        banner,
-        /Failed to fetch|NetworkError/i.test(detail)
-          ? "ยังไม่ได้เปิดเซิร์ฟเวอร์แปล — ดับเบิลคลิก start-server.cmd"
-          : `แปลไม่สำเร็จ: ${detail}`,
-        "error"
+        generation,
+        (done, total) => {
+          const suffix = total ? ` (${done}/${total})` : "";
+          setQuizBanner(banner, `กำลังแปลแบบทดสอบ ...${suffix}`);
+        }
       );
+    } catch (err) {
+      if (err instanceof Stale) return; // user moved on; nothing to report
+      state.status = "error";
+      setQuizBanner(banner, describeTranslateError(err), "error");
       return;
     }
 
     state.quizMap = new Map();
-    (response.cues || []).forEach((cue, n) => {
+    (translated || []).forEach((cue, n) => {
       if (cue && cue.th && strings[n]) {
         state.quizMap.set(normalizeText(strings[n]), cue.th);
       }
@@ -643,6 +693,7 @@
   }
 
   async function startArticle(asset) {
+    const generation = state.generation;
     const container = await waitForArticleContainer();
     if (!container) {
       log("ไม่พบกล่องบทความในหน้านี้");
@@ -689,11 +740,10 @@
       text: (el.textContent || "").replace(/\s+/g, " ").trim(),
     }));
 
-    let response;
+    let translations;
     try {
-      response = await chrome.runtime.sendMessage({
-        type: "translate",
-        payload: {
+      translations = await requestTranslation(
+        {
           course: courseSlug(),
           lecture: lectureId(), // stable cache identity, unlike the title
           title: `${lessonTitle()} (เอกสาร)`,
@@ -701,29 +751,22 @@
           mode: "doc",
           force,
         },
-      });
-    } catch (err) {
-      state.status = "error";
-      setDocStatus(panel, describeSendError(err), "error");
-      return;
-    }
-
-    if (!response || !response.ok) {
-      state.status = "error";
-      const detail = (response && response.error) || "ไม่ทราบสาเหตุ";
-      setDocStatus(
-        panel,
-        /Failed to fetch|NetworkError/i.test(detail)
-          ? "ยังไม่ได้เปิดเซิร์ฟเวอร์แปล — ดับเบิลคลิก start-server.cmd"
-          : `แปลไม่สำเร็จ: ${detail}`,
-        "error"
+        generation,
+        (done, total) => {
+          const suffix = total ? ` (${done}/${total})` : "";
+          setDocStatus(panel, `กำลังแปลเอกสาร ...${suffix}`);
+        }
       );
+    } catch (err) {
+      if (err instanceof Stale) return; // user moved on; nothing to report
+      state.status = "error";
+      setDocStatus(panel, describeTranslateError(err), "error");
       return;
     }
 
     // Write the Thai text back into the copied DOM, so headings stay headings
     // and code blocks stay exactly as the instructor wrote them.
-    const translations = response.cues || [];
+    translations = translations || [];
     translatable.forEach(({ el }, n) => {
       const th = translations[n] && translations[n].th;
       if (th) el.textContent = th;
@@ -776,13 +819,25 @@
   }
 
   // Udemy is a single-page app: the URL changes without a reload.
+  const MAX_RETRIES = 3;
+
   function watchForLectureChange() {
     let running = false;
+    let failures = 0;
+    // A retry clears state.lectureKey, so the next tick looks exactly like a
+    // lecture change. Tracking the key separately is what keeps the retry
+    // counter climbing instead of resetting to zero on every attempt — without
+    // it MAX_RETRIES never bites and the loop runs forever.
+    let attemptedKey = null;
 
     const tick = async () => {
       const key = lectureId() || quizId() || location.pathname;
       if (key === state.lectureKey || running) return;
 
+      if (key !== attemptedKey) {
+        attemptedKey = key;
+        failures = 0;
+      }
       state.lectureKey = key;
       state.status = "idle";
       running = true;
@@ -790,10 +845,28 @@
       try {
         await start();
       } catch (err) {
+        failures += 1;
         log("ผิดพลาด", err);
         state.status = "error";
-        renderStatus(`เกิดข้อผิดพลาด: ${(err && err.message) || err}`, "error");
-        state.lectureKey = null; // let the next tick retry
+
+        // Clearing lectureKey immediately made the next tick retry 1.5s later,
+        // and a failure that repeats (a dead server, say) turned into an error
+        // message flashing forever. Back off, and give up after a few tries.
+        if (failures <= MAX_RETRIES) {
+          const delay = 4000 * failures;
+          renderStatus(
+            `${describeTranslateError(err)} — ลองใหม่ใน ${Math.round(delay / 1000)} วินาที`,
+            "error"
+          );
+          setTimeout(() => {
+            if (state.lectureKey === key) state.lectureKey = null;
+          }, delay);
+        } else {
+          renderStatus(
+            `${describeTranslateError(err)} — หยุดลองแล้ว กด F5 เพื่อเริ่มใหม่`,
+            "error"
+          );
+        }
       } finally {
         running = false;
       }
@@ -804,13 +877,6 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === "progress") {
-      if (state.status === "translating") {
-        const suffix = message.chunks ? ` (${message.progress}/${message.chunks})` : "";
-        renderStatus(`กำลังแปลเป็นไทย ...${suffix}`);
-      }
-      return false;
-    }
     if (message.type === "getState") {
       sendResponse({
         status: state.status,

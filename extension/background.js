@@ -1,12 +1,16 @@
 // Service worker: the only place that talks to the local translation server.
 //
-// Content scripts can't reliably do cross-origin fetches under MV3, so the
-// content script sends a message here and this worker does the HTTP work and
-// polls the job until it finishes.
+// Every handler here must finish fast. An MV3 service worker is not a
+// long-lived background page — Chrome terminates it when idle and caps how
+// long it may stay alive, so waiting out a 30-90s translation in here gets the
+// worker killed mid-wait and the caller's sendMessage rejects with
+// "message channel closed before a response was received".
+//
+// So this file only ever does one short round trip per message: start a job,
+// or report a job's status. The content script owns the waiting, because it
+// lives in the page and is not subject to that lifetime.
 
 const DEFAULT_SERVER = "http://127.0.0.1:8765";
-const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function serverUrl() {
   const stored = await chrome.storage.local.get("serverUrl");
@@ -21,52 +25,32 @@ async function checkHealth() {
     const data = await response.json();
     return { ok: true, engine: data.engine };
   } catch (err) {
-    return { ok: false, error: String(err && err.message ? err.message : err) };
+    return { ok: false, error: String((err && err.message) || err) };
   }
 }
 
-// Translate a lesson, reporting progress back to the requesting tab.
-async function translate(payload, tabId) {
+// Kick off a translation. Returns immediately with the job id — or with the
+// finished cues when the server already had them cached.
+async function startJob(payload) {
   const base = await serverUrl();
-
-  const started = await fetch(`${base}/translate`, {
+  const response = await fetch(`${base}/translate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
-  if (!started.ok) {
-    const detail = await started.text().catch(() => "");
-    throw new Error(`เซิร์ฟเวอร์ตอบ ${started.status} ${detail.slice(0, 200)}`);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`เซิร์ฟเวอร์ตอบ ${response.status} ${detail.slice(0, 200)}`);
   }
+  return response.json();
+}
 
-  const job = await started.json();
-  if (job.status === "done" && job.cues) {
-    return job.cues;
-  }
-
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-
-    const response = await fetch(`${base}/job/${job.job}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`อ่านสถานะงานไม่ได้ (HTTP ${response.status})`);
-    const state = await response.json();
-
-    if (state.status === "done") return state.cues;
-    if (state.status === "error") throw new Error(state.error || "แปลไม่สำเร็จ");
-
-    if (tabId !== undefined) {
-      chrome.tabs
-        .sendMessage(tabId, {
-          type: "progress",
-          progress: state.progress || 0,
-          chunks: state.chunks || 0,
-        })
-        .catch(() => {});
-    }
-  }
-  throw new Error("แปลนานเกินไป ยกเลิกแล้ว");
+async function jobStatus(jobId) {
+  const base = await serverUrl();
+  const response = await fetch(`${base}/job/${jobId}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`อ่านสถานะงานไม่ได้ (HTTP ${response.status})`);
+  return response.json();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -75,9 +59,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "translate") {
-    translate(message.payload, sender.tab && sender.tab.id)
-      .then((cues) => sendResponse({ ok: true, cues }))
+  if (message.type === "startJob") {
+    startJob(message.payload)
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
+  if (message.type === "jobStatus") {
+    jobStatus(message.jobId)
+      .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
     return true;
   }
