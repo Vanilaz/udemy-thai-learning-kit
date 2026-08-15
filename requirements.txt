@@ -1,0 +1,9 @@
+# แกนหลักไม่ต้องพึ่ง dependency ใดเลย — ใช้ standard library ล้วน
+#
+# ติดตั้งเฉพาะเมื่อจะใช้ `translate --engine claude` (ต้องมี ANTHROPIC_API_KEY):
+#   python -m pip install -r requirements.txt
+#
+# ส่วน `translate --engine agy` ใช้ Antigravity CLI ที่ติดตั้งแยกอยู่แล้ว
+# ไม่ต้องติดตั้งอะไรเพิ่ม
+
+anthropic>=0.104.0

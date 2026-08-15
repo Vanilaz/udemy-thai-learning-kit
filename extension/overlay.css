@@ -1,0 +1,191 @@
+/* Subtitle overlay drawn on top of the Udemy player.
+   pointer-events stays off so play/pause and the scrubber still work. */
+
+/* While we are drawing Thai subtitles, hide Udemy's own caption layer —
+   otherwise its English line stacks on top of ours and the two overlap.
+   Only the display is suppressed; Udemy's caption state is left untouched,
+   so turning our overlay off brings its subtitles straight back.
+   The class hashes change between Udemy builds, hence the substring match. */
+html.udth-hide-native [class*="captions-display-module--captions-container"],
+html.udth-hide-native [class*="captions-display-module--captions-cue-text"] {
+  display: none !important;
+}
+
+.udth-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Sit above Udemy's control bar rather than behind it. */
+  bottom: 9%;
+  z-index: 2147483000;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 6%;
+  box-sizing: border-box;
+}
+
+.udth-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  text-align: center;
+}
+
+.udth-en,
+.udth-th {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  line-height: 1.45;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* English sits smaller and dimmer — it is the reference line, not the one
+   you read. Thai is the primary line. */
+.udth-en {
+  font-size: clamp(12px, 1.35vw, 17px);
+  color: #d7dae0;
+  font-weight: 400;
+}
+
+.udth-th {
+  font-size: clamp(15px, 1.75vw, 23px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.udth-status {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #e9ecf1;
+  font-size: clamp(12px, 1.2vw, 15px);
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.udth-status.udth-ok {
+  border-color: rgba(80, 200, 130, 0.55);
+  color: #b7f0cd;
+}
+
+.udth-status.udth-error {
+  border-color: rgba(240, 110, 110, 0.6);
+  color: #ffc9c9;
+  background: rgba(60, 12, 12, 0.9);
+}
+
+/* ---------------------------------------------------------- article mode */
+
+/* Panel holding the Thai translation of an Article lecture. Colors are
+   inherited from Udemy's own page so it works in both its light and dark
+   themes without guessing at their palette. */
+.udth-doc {
+  margin: 0 0 24px;
+  border: 1px solid currentColor;
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.udth-doc-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.udth-doc-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.udth-doc-toggle {
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.udth-doc-toggle:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.udth-doc-body {
+  padding: 16px 18px;
+  /* Thai needs more line height than English to stay readable. */
+  line-height: 1.85;
+}
+
+.udth-doc-body > div > :first-child {
+  margin-top: 0;
+}
+
+.udth-doc-body > div > :last-child {
+  margin-bottom: 0;
+}
+
+/* Code the instructor wrote is passed through untranslated — make that
+   visually obvious so it is clear it was not tampered with. */
+.udth-doc-body pre,
+.udth-doc-body code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.udth-doc-body pre {
+  padding: 12px 14px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.udth-doc-body .udth-status {
+  display: inline-block;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+/* ------------------------------------------------------------- quiz mode */
+
+/* Thai is added *under* the English rather than replacing it: on an exam you
+   need the original wording available, and a shaky translation must never be
+   the only thing you can read. */
+.udth-quiz-th {
+  margin-top: 4px;
+  padding-left: 9px;
+  border-left: 3px solid color-mix(in srgb, currentColor 30%, transparent);
+  font-size: 0.95em;
+  line-height: 1.7;
+  opacity: 0.92;
+}
+
+.udth-quiz-banner {
+  margin: 0 0 14px;
+}
+
+.udth-quiz-banner .udth-status {
+  display: inline-block;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}

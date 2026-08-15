@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1c20;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --accent: #5b3fd6;
+        --ok-bg: #e8f7ee;
+        --ok-fg: #1a7f45;
+        --err-bg: #fdecec;
+        --err-fg: #b42318;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17181c;
+          --fg: #e8eaed;
+          --muted: #9aa0a6;
+          --line: #2c2f36;
+          --accent: #a48bff;
+          --ok-bg: #14311f;
+          --ok-fg: #7fe0a5;
+          --err-bg: #3a1414;
+          --err-fg: #ffb4ae;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        width: 290px;
+        margin: 0;
+        padding: 14px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+      }
+      h1 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
+      .status {
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: var(--err-bg);
+        color: var(--err-fg);
+        font-weight: 550;
+        margin-bottom: 12px;
+      }
+      .status.ok { background: var(--ok-bg); color: var(--ok-fg); }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 0;
+        border-top: 1px solid var(--line);
+      }
+      label { cursor: pointer; }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+      button {
+        width: 100%;
+        margin-top: 12px;
+        padding: 8px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover { filter: brightness(1.08); }
+      code {
+        font-family: Consolas, monospace;
+        background: var(--line);
+        padding: 1px 4px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Udemy ซับไทย</h1>
+    <div id="status" class="status">กำลังตรวจสอบ ...</div>
+
+    <div class="row">
+      <label for="enabled">แสดงซับไทย</label>
+      <input type="checkbox" id="enabled" checked />
+    </div>
+    <div class="row">
+      <label for="dual">แสดงอังกฤษด้วย</label>
+      <input type="checkbox" id="dual" checked />
+    </div>
+
+    <button id="retry">แปลบทเรียนนี้ใหม่</button>
+
+    <p class="hint" id="hint">
+      ต้องเปิด <code>start-server.cmd</code> ค้างไว้ระหว่างเรียน
+    </p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
