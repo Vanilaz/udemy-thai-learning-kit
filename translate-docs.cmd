@@ -1,25 +1,27 @@
 @echo off
 REM ======================================================================
-REM  แปลไฟล์เอกสารแนบของบทเรียน (PDF / DOCX / TXT / MD / HTML)
+REM  Translate lecture handouts (PDF / DOCX / TXT / MD / HTML).
 REM
-REM  วิธีใช้:
-REM    1. ดาวน์โหลดไฟล์แนบจาก Udemy ตามปกติ (ปุ่ม Resources ในตัวเล่นวิดีโอ)
-REM    2. ลากไฟล์ (หรือทั้งโฟลเดอร์) มาวางบนไฟล์นี้
+REM    1. Download the attachment from Udemy as usual
+REM       (the Resources button in the player)
+REM    2. Drop the file, or a whole folder, onto this file
 REM
-REM  ผลลัพธ์เป็นไฟล์ .th.md อยู่ใน out\docs\
-REM  ไฟล์โค้ด .zip .cs .js และรูปภาพจะถูกข้ามอัตโนมัติ
+REM  Results are .th.md files under out\docs\
+REM  Code and archives (.zip .cs .js) and images are skipped.
+REM
+REM  KEEP THIS FILE PURE ASCII - see the note in start-server.cmd.
+REM  The prompt for the path lives in Python so it can be in Thai.
 REM ======================================================================
 
 chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
 
 if "%~1"=="" (
-    set /p DOC_PATH="ลากไฟล์มาวาง หรือพิมพ์ path: "
+    python -m udemy_th docs
 ) else (
-    set "DOC_PATH=%~1"
+    python -m udemy_th docs "%~1"
 )
-
-python -m udemy_th docs "%DOC_PATH%"
 
 echo.
 pause

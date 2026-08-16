@@ -40,6 +40,13 @@ def main(argv: list[str] | None = None) -> int:
     p_go.add_argument("--effort", choices=("low", "medium", "high"), default="high")
     p_go.add_argument("--bom", action="store_true", help="เขียน .srt แบบ UTF-8 with BOM")
     p_go.add_argument("--force", action="store_true", help="ทำซ้ำบทที่เคยทำแล้ว")
+    # ตัวเรียกแบบ .cmd ถามเองไม่ได้ เพราะไฟล์ .cmd ต้องเป็น ASCII ล้วน
+    # (ดูหมายเหตุใน start-server.cmd) จึงให้ Python เป็นคนถามแทน
+    p_go.add_argument(
+        "--ask-folder",
+        action="store_true",
+        help="ถามหาโฟลเดอร์คอร์ส แทนการอ่านจาก clipboard",
+    )
     p_go.add_argument("--no-open", action="store_true", help="ไม่ต้องเปิดโฟลเดอร์ผลลัพธ์")
 
     p_prepare = sub.add_parser("prepare", help="เตรียมไฟล์คำขอแปลจาก transcript")
@@ -80,7 +87,13 @@ def main(argv: list[str] | None = None) -> int:
     p_docs = sub.add_parser(
         "docs", help="แปลไฟล์เอกสารแนบ (PDF / DOCX / TXT / MD / HTML)"
     )
-    p_docs.add_argument("source", type=Path, help="ไฟล์ หรือโฟลเดอร์ที่มีไฟล์เอกสาร")
+    p_docs.add_argument(
+        "source",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="ไฟล์ หรือโฟลเดอร์ที่มีไฟล์เอกสาร (เว้นว่างไว้ = ถามทีหลัง)",
+    )
     p_docs.add_argument("--engine", choices=("agy", "claude"), default="agy")
     p_docs.add_argument("--effort", choices=("low", "medium", "high"), default="high")
     p_docs.add_argument("--no-open", action="store_true", help="ไม่ต้องเปิดโฟลเดอร์ผลลัพธ์")
@@ -135,6 +148,14 @@ def _cmd_go(args, glossary: Glossary) -> int:
         bom=args.bom,
     )
 
+    if args.source is None and args.ask_folder:
+        args.source = _ask_path("พิมพ์ path โฟลเดอร์คอร์ส (หรือลากโฟลเดอร์มาวางที่นี่)")
+        if args.source is None:
+            return 1
+        if not args.source.is_dir():
+            print(f"ไม่ใช่โฟลเดอร์: {args.source}", file=sys.stderr)
+            return 1
+
     if args.source is not None and args.source.is_dir():
         reports = go_folder(args.source, force=args.force, **common)
         if not reports:
@@ -168,13 +189,41 @@ def _cmd_go(args, glossary: Glossary) -> int:
     return 0
 
 
+def _clean_input(raw: str) -> str:
+    """ตัดอักขระที่มองไม่เห็นออกจากสิ่งที่ผู้ใช้พิมพ์หรือวางมา
+
+    BOM กับ zero-width space ติดมากับข้อความที่ก๊อปมาได้บ่อย และมันมองไม่เห็น
+    ค่าที่ได้จึงดูเหมือนว่าง แต่ไม่ว่าง — ทำให้ค่าปริยายไม่ทำงาน และถ้าเอาไป
+    ตั้งเป็นชื่อโฟลเดอร์ก็จะได้โฟลเดอร์ที่เปิดลำบาก
+    """
+    return raw.replace("﻿", "").replace("​", "").strip()
+
+
 def _ask(label: str, default: str) -> str:
     suffix = f" [{default}]" if default else ""
     try:
-        answer = input(f"{label}{suffix}: ").strip()
+        answer = _clean_input(input(f"{label}{suffix}: "))
     except EOFError:
         answer = ""
     return answer or default
+
+
+def _ask_path(label: str) -> Path | None:
+    """ถาม path จากผู้ใช้ — ลากไฟล์มาวางในหน้าต่าง console ก็ได้
+
+    Windows ใส่ " ครอบให้เองเมื่อลากไฟล์ที่ path มีช่องว่าง ต้องถอดออกก่อน
+    ไม่งั้นเครื่องหมายคำพูดจะกลายเป็นส่วนหนึ่งของชื่อไฟล์
+    """
+    print(label)
+    try:
+        answer = _clean_input(input("> "))
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    answer = _clean_input(answer.strip('"').strip("'"))
+    if not answer:
+        print("ไม่ได้ระบุ path — ยกเลิก", file=sys.stderr)
+        return None
+    return Path(answer)
 
 
 def _print_report(report: dict) -> None:
@@ -261,6 +310,15 @@ def _cmd_docs(args, glossary: Glossary) -> int:
     from .docs import translate_document, translate_folder
 
     out_root = OUT / "docs"
+    if args.source is None:
+        args.source = _ask_path("ลากไฟล์เอกสารมาวางที่นี่ หรือพิมพ์ path")
+        if args.source is None:
+            return 1
+
+    if not args.source.exists():
+        print(f"ไม่พบไฟล์หรือโฟลเดอร์: {args.source}", file=sys.stderr)
+        return 1
+
     if args.source.is_dir():
         reports = translate_folder(
             args.source, glossary, out_root, args.engine, args.effort

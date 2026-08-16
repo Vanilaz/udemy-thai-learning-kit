@@ -1,23 +1,26 @@
 @echo off
 REM ======================================================================
-REM  แปลทั้งคอร์สรวดเดียว
+REM  Translate a whole course in one run.
 REM
-REM  วิธีใช้: ลากโฟลเดอร์คอร์ส (เช่น courses\my-course) มาวางบนไฟล์นี้
-REM           หรือดับเบิลคลิกแล้วพิมพ์ชื่อโฟลเดอร์
+REM  Drop a course folder (e.g. courses\my-course) onto this file, or
+REM  double-click and type the path when asked.
 REM
-REM  บทที่ทำไปแล้วจะถูกข้ามอัตโนมัติ ปิดหน้าต่างกลางคันแล้วรันใหม่ได้
+REM  Lectures already done are skipped, so closing the window part way
+REM  through and running it again is safe.
+REM
+REM  KEEP THIS FILE PURE ASCII - see the note in start-server.cmd.
+REM  The prompt for the folder lives in Python so it can be in Thai.
 REM ======================================================================
 
 chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
 
 if "%~1"=="" (
-    set /p COURSE_DIR="พิมพ์ path โฟลเดอร์คอร์ส: "
+    python -m udemy_th go --ask-folder
 ) else (
-    set "COURSE_DIR=%~1"
+    python -m udemy_th go "%~1"
 )
-
-python -m udemy_th go "%COURSE_DIR%"
 
 echo.
 pause

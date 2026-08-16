@@ -1,19 +1,22 @@
 @echo off
 REM ======================================================================
-REM  เปิดเซิร์ฟเวอร์แปลซับ — เปิดค้างไว้ระหว่างนั่งเรียน
+REM  Start the subtitle translation server.
+REM  Double-click before class and leave the window open, then play a
+REM  Udemy video as usual. Thai subtitles appear on their own.
 REM
-REM  ดับเบิลคลิกไฟล์นี้ก่อนเริ่มเรียน แล้วเปิดวิดีโอใน Udemy ได้เลย
-REM  ซับไทยจะขึ้นเองบนวิดีโอ
-REM
-REM  ปิดหน้าต่างนี้เมื่อเลิกเรียน
+REM  KEEP THIS FILE PURE ASCII.
+REM  cmd.exe loses its place in a batch file that contains non-ASCII bytes
+REM  while the console code page is UTF-8 (65001), and ends up running
+REM  fragments of later lines as commands. Thai text belongs in the Python
+REM  output, which handles it correctly.
 REM ======================================================================
 
 chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
-title Udemy TH - เซิร์ฟเวอร์แปลซับ
+title Udemy TH - subtitle server
 
 python -m udemy_th serve
 
 echo.
-echo เซิร์ฟเวอร์หยุดทำงานแล้ว
 pause
