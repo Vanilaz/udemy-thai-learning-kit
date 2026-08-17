@@ -53,6 +53,14 @@ async function jobStatus(jobId) {
   return response.json();
 }
 
+// How much of a queued section is left, for the on-page badge and the popup.
+async function queueStatus() {
+  const base = await serverUrl();
+  const response = await fetch(`${base}/queue`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`อ่านคิวไม่ได้ (HTTP ${response.status})`);
+  return response.json();
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "health") {
     checkHealth().then(sendResponse);
@@ -68,6 +76,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "jobStatus") {
     jobStatus(message.jobId)
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
+  if (message.type === "queueStatus") {
+    queueStatus()
       .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
     return true;

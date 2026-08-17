@@ -83,6 +83,120 @@ html.udth-hide-native [class*="captions-display-module--captions-cue-text"] {
   background: rgba(60, 12, 12, 0.9);
 }
 
+/* ------------------------------------------------------ section batch badge */
+
+/* Reports the pre-translation queue while the user carries on watching.
+   Deliberately its own dark card rather than inheriting Udemy's colors: it
+   floats over both the light and dark themes and over the black player, so a
+   fixed palette is the only way to keep contrast predictable in all three. */
+.udth-batch {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2147483000;
+  width: 264px;
+  max-width: calc(100vw - 32px);
+  padding: 11px 13px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 19, 24, 0.94);
+  color: #eceef3;
+  font: 500 13px/1.55 "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  animation: udth-batch-in 200ms ease-out;
+}
+
+@keyframes udth-batch-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.udth-batch-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.udth-batch-title {
+  flex: 1;
+}
+
+.udth-batch-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -3px -4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.udth-batch-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Which lecture is being worked on. Two lines at most — a long course title
+   should not grow the card until it covers the player. */
+.udth-batch-detail {
+  margin-top: 3px;
+  color: #a9aeba;
+  font-size: 12px;
+  font-weight: 400;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.udth-batch-track {
+  margin-top: 9px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.udth-batch-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #8b74ff;
+  transition: width 220ms ease-out;
+}
+
+.udth-batch-ok {
+  border-color: rgba(80, 200, 130, 0.5);
+}
+
+.udth-batch-ok .udth-batch-fill {
+  background: #56c98a;
+}
+
+.udth-batch-error {
+  border-color: rgba(240, 110, 110, 0.55);
+  background: rgba(48, 14, 14, 0.95);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udth-batch {
+    animation: none;
+  }
+  .udth-batch-fill {
+    transition: none;
+  }
+}
+
 /* ---------------------------------------------------------- article mode */
 
 /* Panel holding the Thai translation of an Article lecture. Colors are

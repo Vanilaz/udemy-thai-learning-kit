@@ -10,6 +10,10 @@
         --muted: #6b7280;
         --line: #e5e7eb;
         --accent: #5b3fd6;
+        /* Text sitting on the accent. Dark mode lightens the accent, so white
+           lettering drops to about 2.7:1 there — under the 4.5:1 minimum. The
+           readable colour flips with the theme, so it needs its own token. */
+        --on-accent: #ffffff;
         --ok-bg: #e8f7ee;
         --ok-fg: #1a7f45;
         --err-bg: #fdecec;
@@ -22,6 +26,7 @@
           --muted: #9aa0a6;
           --line: #2c2f36;
           --accent: #a48bff;
+          --on-accent: #1a1c20;
           --ok-bg: #14311f;
           --ok-fg: #7fe0a5;
           --err-bg: #3a1414;
@@ -63,12 +68,59 @@
         border: 0;
         border-radius: 8px;
         background: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
         font: inherit;
         font-weight: 600;
         cursor: pointer;
       }
-      button:hover { filter: brightness(1.08); }
+      button:hover:not(:disabled) { filter: brightness(1.08); }
+      /* A disabled control must read as disabled and stop responding, not just
+         look slightly faded. */
+      button:disabled { opacity: 0.45; cursor: default; }
+      /* Secondary action: same size and hit area, lower visual weight, so the
+         primary button stays the obvious one. */
+      button.secondary {
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--fg);
+      }
+      button.secondary:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        filter: none;
+      }
+      .queue {
+        margin-top: 12px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+      }
+      .queue-title { font-weight: 600; }
+      .queue-detail {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .queue-track {
+        margin-top: 8px;
+        height: 4px;
+        border-radius: 999px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .queue-fill {
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: var(--accent);
+        transition: width 220ms ease-out;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .queue-fill { transition: none; }
+      }
       code {
         font-family: Consolas, monospace;
         background: var(--line);
@@ -90,7 +142,14 @@
       <input type="checkbox" id="dual" checked />
     </div>
 
-    <button id="retry">แปลบทเรียนนี้ใหม่</button>
+    <button id="section">แปลทั้ง Section นี้ล่วงหน้า</button>
+    <button id="retry" class="secondary">แปลบทเรียนนี้ใหม่</button>
+
+    <div class="queue" id="queue" style="display: none" aria-live="polite">
+      <div class="queue-title" id="queueTitle"></div>
+      <div class="queue-detail" id="queueDetail"></div>
+      <div class="queue-track"><div class="queue-fill" id="queueFill"></div></div>
+    </div>
 
     <p class="hint" id="hint">
       ต้องเปิด <code>start-server.cmd</code> ค้างไว้ระหว่างเรียน

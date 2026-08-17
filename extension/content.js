@@ -37,6 +37,9 @@
     // Bumped on every lecture change. Work started under an older value is
     // abandoned instead of being written into the page the user has moved to.
     generation: 0,
+    // Section batch. Deliberately untouched by lecture changes: the queue lives
+    // on the server and keeps running while the user watches something else.
+    batch: { preparing: false, timer: null, total: 0, label: "" },
   };
 
   const log = (...args) => console.log("[udth]", ...args);
@@ -211,25 +214,40 @@
     return response.json();
   }
 
-  // One call describes the whole lecture: is it a video or an article, which
-  // captions exist, and (for articles) the HTML body.
-  async function fetchLectureAsset() {
+  let courseIdCache = { slug: null, id: null };
+
+  async function getCourseId() {
     const slug = courseSlug();
-    const lecture = lectureId();
-    if (!slug || !lecture) throw new Error("อ่านรหัสบทเรียนจาก URL ไม่ได้");
+    if (!slug) throw new Error("อ่านรหัสคอร์สจาก URL ไม่ได้");
+    if (courseIdCache.slug === slug && courseIdCache.id) return courseIdCache.id;
 
     const course = await getJson(`/api-2.0/courses/${slug}/?fields[course]=id`);
-    const courseId = course && course.id;
-    if (!courseId) throw new Error("หา course id ไม่เจอ");
+    const id = course && course.id;
+    if (!id) throw new Error("หา course id ไม่เจอ");
+    courseIdCache = { slug, id };
+    return id;
+  }
 
+  // One call describes the whole lecture: is it a video or an article, which
+  // captions exist, and (for articles) the HTML body.
+  //
+  // The id is a parameter rather than always being read from the URL, because
+  // translating a section ahead of time means asking about lectures the user
+  // has not opened yet.
+  async function fetchLectureAsset(lecture) {
+    const target = lecture || lectureId();
+    if (!target) throw new Error("อ่านรหัสบทเรียนจาก URL ไม่ได้");
+
+    const courseId = await getCourseId();
     const data = await getJson(
-      `/api-2.0/users/me/subscribed-courses/${courseId}/lectures/${lecture}/` +
+      `/api-2.0/users/me/subscribed-courses/${courseId}/lectures/${target}/` +
         `?fields[lecture]=asset,title&fields[asset]=asset_type,captions,body` +
         `&fields[caption]=locale_id,title,url,source`
     );
     const asset = (data && data.asset) || {};
     return {
       courseId,
+      title: (data && data.title) || "",
       type: asset.asset_type || "",
       captions: asset.captions || [],
       body: asset.body || "",
@@ -277,6 +295,63 @@
     const h = hours ? parseInt(hours, 10) : 0;
     const frac = parseInt(fraction, 10) / Math.pow(10, String(fraction).length);
     return h * 3600 + parseInt(minutes, 10) * 60 + parseInt(seconds, 10) + frac;
+  }
+
+  // ------------------------------------------------------- cues from an asset
+  //
+  // The lecture on screen and a lecture queued for later both come through
+  // here. That matters: the server keys its cache on the cue list, so if the
+  // two paths built cues even slightly differently, everything translated in
+  // advance would miss the cache and be translated a second time.
+
+  const SKIP_TEXT = {
+    "no-english": "บทนี้ไม่มีคำบรรยายอังกฤษให้แปล",
+    "caption-fetch-failed": "โหลดไฟล์คำบรรยายไม่สำเร็จ",
+    "caption-parse-failed": "อ่านไฟล์คำบรรยายไม่ได้",
+    "empty-article": "บทความนี้ไม่มีเนื้อหาให้แปล",
+    "code-only": "บทความนี้มีแต่โค้ด ไม่มีข้อความให้แปล",
+  };
+
+  async function videoCues(asset) {
+    const captions = asset.captions || [];
+
+    // Only a human-made Thai track beats what we produce. Udemy's "auto" Thai
+    // is machine translation stacked on machine transcription — the errors
+    // compound, so we translate it ourselves instead.
+    const thai = pickCaption(captions, "th");
+    if (thai && thai.source === "manual") return { ok: false, code: "native-thai" };
+
+    const english = pickCaption(captions, "en");
+    if (!english || !english.url) return { ok: false, code: "no-english" };
+
+    const vtt = await fetch(english.url).then((r) => (r.ok ? r.text() : null));
+    if (!vtt) return { ok: false, code: "caption-fetch-failed" };
+
+    const cues = parseVtt(vtt);
+    if (!cues.length) return { ok: false, code: "caption-parse-failed" };
+    return { ok: true, cues, replacingAutoThai: !!thai };
+  }
+
+  function articleCues(asset) {
+    if (!asset.body) return { ok: false, code: "empty-article" };
+
+    // Work on a detached copy of the HTML Udemy gave us, not the live page.
+    const holder = document.createElement("div");
+    holder.innerHTML = asset.body;
+
+    const blocks = collectBlocks(holder).filter((el) => !isCodeBlock(el));
+    if (!blocks.length) return { ok: false, code: "code-only" };
+
+    return {
+      ok: true,
+      holder,
+      blocks,
+      cues: blocks.map((el, n) => ({
+        start: n,
+        end: n + 1,
+        text: (el.textContent || "").replace(/\s+/g, " ").trim(),
+      })),
+    };
   }
 
   // --------------------------------------------------------------- sync loop
@@ -365,14 +440,10 @@
     state.status = "loading";
     renderStatus("กำลังตรวจคำบรรยายของบทเรียนนี้ ...");
 
-    const captions = asset.captions || [];
-    log("พบคำบรรยาย", captions.length, "ภาษา");
+    log("พบคำบรรยาย", (asset.captions || []).length, "ภาษา");
 
-    // Only a human-made Thai track beats what we produce. Udemy's "auto" Thai
-    // is machine translation stacked on machine transcription — the errors
-    // compound, so we translate it ourselves instead.
-    const thai = pickCaption(captions, "th");
-    if (thai && thai.source === "manual") {
+    const built = await videoCues(asset);
+    if (!built.ok && built.code === "native-thai") {
       state.hasNativeThai = true;
       state.status = "native";
       renderStatus(
@@ -384,31 +455,16 @@
       }, 8000);
       return;
     }
-    const replacingAutoThai = !!thai;
+    if (!built.ok) {
+      state.status = "error";
+      renderStatus(SKIP_TEXT[built.code] || "แปลบทนี้ไม่ได้", "error");
+      return;
+    }
+
+    const cues = built.cues;
+    const replacingAutoThai = built.replacingAutoThai;
     if (replacingAutoThai) {
       log("มีซับไทยแบบอัตโนมัติของ Udemy — จะแปลใหม่ด้วย AI แทน");
-    }
-
-    const english = pickCaption(captions, "en");
-    if (!english || !english.url) {
-      state.status = "error";
-      renderStatus("บทนี้ไม่มีคำบรรยายอังกฤษให้แปล", "error");
-      return;
-    }
-
-    renderStatus("กำลังโหลดคำบรรยายอังกฤษ ...");
-    const vtt = await fetch(english.url).then((r) => (r.ok ? r.text() : null));
-    if (!vtt) {
-      state.status = "error";
-      renderStatus("โหลดไฟล์คำบรรยายไม่สำเร็จ", "error");
-      return;
-    }
-
-    const cues = parseVtt(vtt);
-    if (!cues.length) {
-      state.status = "error";
-      renderStatus("อ่านไฟล์คำบรรยายไม่ได้", "error");
-      return;
     }
 
     // "แปลบทเรียนนี้ใหม่" reloads the page, so the request survives as a flag
@@ -699,28 +755,16 @@
       log("ไม่พบกล่องบทความในหน้านี้");
       return;
     }
-    if (!asset.body) {
-      log("บทความนี้ไม่มีเนื้อหาให้แปล");
+    const built = articleCues(asset);
+    if (!built.ok) {
+      log(SKIP_TEXT[built.code] || built.code);
       return;
     }
-
-    // Work on a detached copy of the HTML Udemy gave us, not the live page.
-    const holder = document.createElement("div");
-    holder.innerHTML = asset.body;
-
-    const blocks = collectBlocks(holder);
-    const translatable = blocks
-      .map((el, i) => ({ el, i }))
-      .filter(({ el }) => !isCodeBlock(el));
-
-    if (!translatable.length) {
-      log("บทความนี้มีแต่โค้ด ไม่มีข้อความให้แปล");
-      return;
-    }
+    const { holder, blocks, cues } = built;
 
     state.status = "translating";
     const panel = ensureDocPanel(container);
-    setDocStatus(panel, `กำลังแปลเอกสาร ${translatable.length} ย่อหน้าเป็นไทย ...`);
+    setDocStatus(panel, `กำลังแปลเอกสาร ${blocks.length} ย่อหน้าเป็นไทย ...`);
 
     let force = false;
     try {
@@ -732,13 +776,6 @@
     } catch {
       /* storage unavailable — fall back to using the cache */
     }
-
-    // Reuse the subtitle pipeline: same numbering contract, doc rule set.
-    const cues = translatable.map(({ el }, n) => ({
-      start: n,
-      end: n + 1,
-      text: (el.textContent || "").replace(/\s+/g, " ").trim(),
-    }));
 
     let translations;
     try {
@@ -767,14 +804,14 @@
     // Write the Thai text back into the copied DOM, so headings stay headings
     // and code blocks stay exactly as the instructor wrote them.
     translations = translations || [];
-    translatable.forEach(({ el }, n) => {
+    blocks.forEach((el, n) => {
       const th = translations[n] && translations[n].th;
       if (th) el.textContent = th;
     });
 
     state.status = "ready";
-    renderDocPanel(panel, holder, container, translatable.length);
-    log("แปลเอกสารเสร็จ", translatable.length, "ย่อหน้า");
+    renderDocPanel(panel, holder, container, blocks.length);
+    log("แปลเอกสารเสร็จ", blocks.length, "ย่อหน้า");
   }
 
   function ensureDocPanel(container) {
@@ -816,6 +853,287 @@
       original.style.display = showingOriginal ? "none" : "";
       toggle.textContent = showingOriginal ? "ดูต้นฉบับอังกฤษ" : "ซ่อนต้นฉบับอังกฤษ";
     };
+  }
+
+  // --------------------------------------------------------- section batching
+  //
+  // Translating only the lecture on screen means waiting at the start of every
+  // single one. Queueing the whole section instead means waiting once: by the
+  // time you reach lecture 3, the server has already translated it and the
+  // page finds it in the cache.
+
+  // Measured on a real course: the curriculum comes back paginated at 200 items
+  // and a large course ran to 520, so reading only the first page would hide
+  // most of its sections.
+  const CURRICULUM_PAGE_SIZE = 200;
+  const CURRICULUM_MAX_PAGES = 12;
+
+  async function fetchCurriculum(courseId) {
+    const items = [];
+    for (let page = 1; page <= CURRICULUM_MAX_PAGES; page += 1) {
+      const data = await getJson(
+        `/api-2.0/courses/${courseId}/subscriber-curriculum-items/` +
+          `?page_size=${CURRICULUM_PAGE_SIZE}&page=${page}` +
+          `&fields[lecture]=id,title,object_index,asset` +
+          `&fields[chapter]=id,title,object_index` +
+          `&fields[quiz]=id,title,object_index,type` +
+          `&fields[practice]=id,title,object_index` +
+          `&fields[asset]=asset_type`
+      );
+      items.push(...((data && data.results) || []));
+      if (!data || !data.next) break;
+    }
+    return items;
+  }
+
+  // The list is flat; a "chapter" entry marks where each section begins.
+  function sectionContaining(items, id) {
+    const sections = [];
+    let current = null;
+    for (const item of items) {
+      if (item._class === "chapter") {
+        current = { title: item.title || "Section", items: [] };
+        sections.push(current);
+      } else if (current) {
+        current.items.push(item);
+      }
+    }
+    const wanted = String(id);
+    const index = sections.findIndex((s) =>
+      s.items.some((i) => String(i.id) === wanted)
+    );
+    if (index < 0) return null;
+    return { ...sections[index], number: index + 1, total: sections.length };
+  }
+
+  // Videos and articles only. Practice tests are a different endpoint, and one
+  // of them held 250 questions — queueing that behind a section the user wants
+  // to watch tonight would bury the queue.
+  const BATCH_ASSET_TYPES = ["Video", "Article"];
+
+  async function queueLecture(item) {
+    const asset = await fetchLectureAsset(item.id);
+    const title = item.title || asset.title || `บทเรียน ${item.id}`;
+
+    let payload;
+    if (asset.type === "Article") {
+      const built = articleCues(asset);
+      if (!built.ok) return { outcome: "skipped", reason: built.code };
+      payload = {
+        course: courseSlug(),
+        lecture: String(item.id),
+        title: `${title} (เอกสาร)`,
+        cues: built.cues,
+        mode: "doc",
+      };
+    } else {
+      const built = await videoCues(asset);
+      if (!built.ok) return { outcome: "skipped", reason: built.code };
+      payload = {
+        course: courseSlug(),
+        lecture: String(item.id),
+        title,
+        cues: built.cues,
+      };
+    }
+
+    const started = await chrome.runtime.sendMessage({
+      type: "startJob",
+      payload: { ...payload, batch: true },
+    });
+    if (!started || !started.ok) {
+      throw new Error((started && started.error) || "ส่งงานเข้าคิวไม่สำเร็จ");
+    }
+    const data = started.data || {};
+    return { outcome: data.cached ? "cached" : "queued" };
+  }
+
+  async function translateSection() {
+    if (state.batch.preparing) {
+      return { ok: false, error: "กำลังเตรียมคิวอยู่แล้ว" };
+    }
+
+    const here = lectureId() || quizId();
+    if (!here) {
+      return { ok: false, error: "เปิดบทเรียนสักบทก่อน แล้วค่อยสั่งแปลทั้ง Section" };
+    }
+
+    state.batch.preparing = true;
+    showBatch("กำลังอ่านรายการบทเรียนใน Section ...", "");
+    try {
+      const courseId = await getCourseId();
+      const items = await fetchCurriculum(courseId);
+      const section = sectionContaining(items, here);
+      if (!section) throw new Error("หา Section ของบทเรียนนี้ไม่เจอ");
+
+      const targets = section.items.filter(
+        (i) =>
+          i._class === "lecture" &&
+          BATCH_ASSET_TYPES.includes((i.asset || {}).asset_type)
+      );
+      const label = `Section ${section.number} — ${section.title}`;
+      log("แปลทั้ง Section", label, targets.length, "บทเรียน");
+
+      if (!targets.length) {
+        showBatch("Section นี้ไม่มีวิดีโอหรือบทความให้แปล", "ok", label);
+        setTimeout(hideBatch, 8000);
+        return { ok: true, queued: 0, cached: 0, skipped: 0, section: label };
+      }
+
+      let queued = 0;
+      let cached = 0;
+      let skipped = 0;
+      // Kept apart from `skipped`: a lecture with no English captions is a fact
+      // about the course, but a refused request means something is wrong and
+      // the user needs to be told what.
+      let lastError = null;
+
+      for (let n = 0; n < targets.length; n += 1) {
+        showBatch(
+          `กำลังเตรียม ${n + 1}/${targets.length} บทเรียน`,
+          "",
+          label,
+          n / targets.length
+        );
+        try {
+          const result = await queueLecture(targets[n]);
+          if (result.outcome === "cached") cached += 1;
+          else if (result.outcome === "queued") queued += 1;
+          else {
+            skipped += 1;
+            log("ข้าม", targets[n].title, result.reason);
+          }
+        } catch (err) {
+          lastError = err;
+          log("ข้าม", targets[n].title, err);
+        }
+      }
+
+      // Nothing got through and every attempt threw — report the cause rather
+      // than claiming the section has nothing to translate.
+      if (!queued && !cached && lastError) throw lastError;
+
+      state.batch.label = label;
+      state.batch.total = queued;
+      log("เข้าคิวแล้ว", { queued, cached, skipped, failed: lastError ? 1 : 0 });
+
+      if (queued) {
+        startQueueWatch();
+      } else {
+        showBatch(
+          cached ? `Section นี้แปลไว้หมดแล้ว (${cached} บทเรียน)` : "ไม่มีบทเรียนที่แปลได้",
+          "ok",
+          label
+        );
+        setTimeout(hideBatch, 8000);
+      }
+      return { ok: true, queued, cached, skipped, section: label };
+    } catch (err) {
+      const text = describeTranslateError(err);
+      showBatch(text, "error");
+      return { ok: false, error: text };
+    } finally {
+      state.batch.preparing = false;
+    }
+  }
+
+  // ------------------------------------------------------------- batch badge
+
+  function ensureBatchBadge() {
+    let badge = document.querySelector(".udth-batch");
+    if (badge) return badge;
+
+    badge = document.createElement("div");
+    badge.className = "udth-batch";
+    // Progress is announced, not shouted: polite means a screen reader finishes
+    // the sentence it is on before reading the update.
+    badge.setAttribute("aria-live", "polite");
+    badge.innerHTML =
+      '<div class="udth-batch-head">' +
+      '<span class="udth-batch-title"></span>' +
+      '<button type="button" class="udth-batch-close" aria-label="ปิดกล่องสถานะ">&times;</button>' +
+      "</div>" +
+      '<div class="udth-batch-detail"></div>' +
+      '<div class="udth-batch-track"><div class="udth-batch-fill"></div></div>';
+    document.body.appendChild(badge);
+    badge.querySelector(".udth-batch-close").addEventListener("click", hideBatch);
+    return badge;
+  }
+
+  function showBatch(text, kind = "", detail = "", ratio = null) {
+    const badge = ensureBatchBadge();
+    badge.className = `udth-batch${kind ? ` udth-batch-${kind}` : ""}`;
+    badge.querySelector(".udth-batch-title").textContent = text;
+
+    const detailEl = badge.querySelector(".udth-batch-detail");
+    detailEl.textContent = detail;
+    detailEl.style.display = detail ? "" : "none";
+
+    const track = badge.querySelector(".udth-batch-track");
+    track.style.display = ratio === null ? "none" : "";
+    if (ratio !== null) {
+      const percent = Math.max(0, Math.min(1, ratio)) * 100;
+      badge.querySelector(".udth-batch-fill").style.width = `${percent}%`;
+    }
+  }
+
+  function hideBatch() {
+    stopQueueWatch();
+    const badge = document.querySelector(".udth-batch");
+    if (badge) badge.remove();
+  }
+
+  const QUEUE_POLL_MS = 3000;
+
+  function stopQueueWatch() {
+    if (state.batch.timer) {
+      clearInterval(state.batch.timer);
+      state.batch.timer = null;
+    }
+  }
+
+  // Keeps reporting after the user moves to the next lecture — the queue lives
+  // on the server, so it outlives whichever page happens to be open.
+  function startQueueWatch() {
+    if (state.batch.timer) return;
+
+    const tick = async () => {
+      let info = null;
+      try {
+        const res = await chrome.runtime.sendMessage({ type: "queueStatus" });
+        if (res && res.ok) info = res.data;
+      } catch {
+        /* worker asleep or extension reloaded — try again next tick */
+      }
+      if (!info) return;
+
+      const left = (info.queued || 0) + (info.running ? 1 : 0);
+      if (!left) {
+        stopQueueWatch();
+        showBatch(
+          info.failed
+            ? `แปลล่วงหน้าเสร็จ — พลาด ${info.failed} บทเรียน`
+            : "แปลล่วงหน้าเสร็จแล้ว เปิดบทถัดไปได้เลย",
+          info.failed ? "error" : "ok",
+          state.batch.label
+        );
+        setTimeout(hideBatch, 10000);
+        return;
+      }
+
+      const total = state.batch.total || left;
+      const done = Math.max(0, total - left);
+      const now = info.running ? info.running.title : "";
+      showBatch(
+        `กำลังแปลล่วงหน้า ${done}/${total} บทเรียน`,
+        "",
+        now || state.batch.label,
+        total ? done / total : null
+      );
+    };
+
+    tick();
+    state.batch.timer = setInterval(tick, QUEUE_POLL_MS);
   }
 
   // Udemy is a single-page app: the URL changes without a reload.
@@ -900,6 +1218,18 @@
     if (message.type === "retranslate") {
       state.lectureKey = null;
       sendResponse({ ok: true });
+      return false;
+    }
+    if (message.type === "translateSection") {
+      // Answer now and keep working. Gathering a section takes tens of seconds
+      // and the popup usually closes long before then; holding the message
+      // channel open that long is exactly what broke the old design.
+      if (state.batch.preparing) {
+        sendResponse({ ok: false, error: "กำลังเตรียมคิวอยู่แล้ว" });
+        return false;
+      }
+      translateSection().catch((err) => log("แปลทั้ง Section ล้มเหลว", err));
+      sendResponse({ ok: true, started: true });
       return false;
     }
     return false;

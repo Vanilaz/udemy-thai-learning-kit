@@ -8,10 +8,17 @@ result on disk, and hands back Thai subtitle cues.
 Translation takes ~30-90s, which is far too long to hold an HTTP request open,
 so it runs as a background job the extension polls.
 
+Jobs run one at a time on a single worker. Translating a whole section means
+queueing a dozen lectures at once, and running those in parallel would start a
+dozen `agy` processes competing for the machine — and have them race each other
+writing the shared glossary file. A queue also lets the lecture the user is
+actually watching jump ahead of the batch.
+
 Endpoints
     GET  /health                 -> {"ok": true}
+    GET  /queue                  -> {"running": {...}, "queued": n, ...}
     POST /translate              -> {"job": "<id>", "status": "..."}
-    GET  /job/<id>               -> {"status": "pending|running|done|error", ...}
+    GET  /job/<id>               -> {"status": "queued|running|done|error", ...}
 """
 
 from __future__ import annotations
@@ -31,8 +38,18 @@ HOST = "127.0.0.1"
 PORT = 8765
 MAX_BODY_BYTES = 8 * 1024 * 1024
 
+# Lower number runs first. The lecture on screen must not wait behind a batch
+# that was queued to be watched later.
+PRIORITY_NOW = 0
+PRIORITY_BATCH = 1
+
+# Public job records, exactly as handed to the extension — keep them JSON-safe.
 _jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
+# What each queued job needs in order to run, kept out of the public record.
+_job_args: dict[str, tuple] = {}
+_queue: list[str] = []
+# Guards all three of the above, and wakes the worker when work arrives.
+_cv = threading.Condition()
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -73,14 +90,18 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send(200, {"ok": True, "engine": self.engine})
             return
+        if self.path == "/queue":
+            self._send(200, _queue_summary())
+            return
         if self.path.startswith("/job/"):
             job_id = self.path[len("/job/") :]
-            with _jobs_lock:
+            with _cv:
                 job = _jobs.get(job_id)
-            if job is None:
+                snapshot = dict(job) if job else None
+            if snapshot is None:
                 self._send(404, {"error": "ไม่พบงานนี้"})
                 return
-            self._send(200, job)
+            self._send(200, snapshot)
             return
         self._send(404, {"error": "not found"})
 
@@ -112,6 +133,9 @@ class _Handler(BaseHTTPRequestHandler):
         force = bool(payload.get("force"))
         # "subtitle" for caption lines, "doc" for article/handout prose.
         mode = "doc" if payload.get("mode") == "doc" else "subtitle"
+        # A section batch is queued for later watching, so it yields to whatever
+        # the user has open right now.
+        batch = bool(payload.get("batch"))
         # Identify the lesson by its id from the URL, never by its on-screen
         # title: Udemy fills that in asynchronously, so reading it early gives
         # a different string than reading it late — and a title that varies
@@ -123,32 +147,22 @@ class _Handler(BaseHTTPRequestHandler):
         if cached.exists() and force:
             cached.unlink()
         elif cached.exists():
-            self._send(
-                200,
-                {
-                    "job": key,
-                    "status": "done",
-                    "cached": True,
-                    "cues": json.loads(cached.read_text(encoding="utf-8")),
-                },
-            )
+            answer = {"job": key, "status": "done", "cached": True}
+            # A batch only wants to know it is already done. Sending back every
+            # cue of a dozen lectures nobody is reading yet is pure waste.
+            if not batch:
+                answer["cues"] = json.loads(cached.read_text(encoding="utf-8"))
+            self._send(200, answer)
             return
 
-        with _jobs_lock:
-            existing = _jobs.get(key)
-            if existing and existing["status"] in ("pending", "running"):
-                self._send(200, {"job": key, "status": existing["status"]})
-                return
-            _jobs[key] = {"status": "pending", "progress": 0, "total": len(cues)}
-
-        thread = threading.Thread(
-            target=_run_job,
-            args=(key, course, title, cues, self.cache_dir, self.glossary_path,
+        status = _enqueue(
+            key,
+            priority=PRIORITY_BATCH if batch else PRIORITY_NOW,
+            title=title,
+            args=(course, title, cues, self.cache_dir, self.glossary_path,
                   self.engine, self.effort, mode),
-            daemon=True,
         )
-        thread.start()
-        self._send(202, {"job": key, "status": "pending"})
+        self._send(202, {"job": key, "status": status})
 
 
 def _cache_key(course: str, title: str, cues: list[dict]) -> str:
@@ -165,9 +179,91 @@ def _cache_key(course: str, title: str, cues: list[dict]) -> str:
 
 
 def _set_job(key: str, **fields) -> None:
-    with _jobs_lock:
+    with _cv:
         job = _jobs.setdefault(key, {})
         job.update(fields)
+
+
+def _enqueue(key: str, priority: int, title: str, args: tuple) -> str:
+    """Queue a translation, or join the one already queued for the same key."""
+    with _cv:
+        existing = _jobs.get(key)
+        if existing and existing["status"] in ("queued", "running"):
+            # Already waiting because a batch queued it. If the user has now
+            # opened that very lecture, move it to the front of the queue
+            # instead of making them wait out everything ahead of it.
+            if priority < existing.get("priority", PRIORITY_BATCH):
+                existing["priority"] = priority
+            return existing["status"]
+
+        _jobs[key] = {
+            "status": "queued",
+            "progress": 0,
+            "total": len(args[2]),
+            "priority": priority,
+            "title": title,
+        }
+        _job_args[key] = args
+        _queue.append(key)
+        _cv.notify()
+        return "queued"
+
+
+def _worker() -> None:
+    while True:
+        with _cv:
+            while not _queue:
+                _cv.wait()
+            # Lowest priority value wins; ties fall back to arrival order.
+            index = min(
+                range(len(_queue)),
+                key=lambda i: (_jobs[_queue[i]].get("priority", PRIORITY_BATCH), i),
+            )
+            key = _queue.pop(index)
+            args = _job_args.pop(key, None)
+            waiting = len(_queue)
+
+        if args is None:
+            continue
+        if waiting:
+            print(f"  (คิวเหลืออีก {waiting} บทเรียน)", flush=True)
+        _run_job(key, *args)
+
+
+def _queue_summary() -> dict:
+    """What the extension shows while a section is being translated."""
+    with _cv:
+        running = None
+        done = failed = 0
+        for job in _jobs.values():
+            if job["status"] == "running":
+                running = {
+                    "title": job.get("title", ""),
+                    "progress": job.get("progress", 0),
+                    "chunks": job.get("chunks", 0),
+                }
+            elif job["status"] == "done":
+                done += 1
+            elif job["status"] == "error":
+                failed += 1
+        return {
+            "running": running,
+            "queued": len(_queue),
+            "done": done,
+            "failed": failed,
+            # Preview the next few in the order the worker will actually take
+            # them, not the order they arrived in.
+            "waiting": [
+                _jobs[k].get("title", "")
+                for k in sorted(
+                    _queue,
+                    key=lambda k: (
+                        _jobs[k].get("priority", PRIORITY_BATCH),
+                        _queue.index(k),
+                    ),
+                )[:3]
+            ],
+        }
 
 
 def _run_job(
@@ -280,6 +376,8 @@ def serve(
     _Handler.glossary_path = glossary_path
     _Handler.engine = engine
     _Handler.effort = effort
+
+    threading.Thread(target=_worker, daemon=True, name="udth-worker").start()
 
     server = ThreadingHTTPServer((HOST, port), _Handler)
     print("=" * 58)
