@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -390,6 +391,26 @@ def _run_job(
         _set_job(key, status="error", error=str(exc))
 
 
+class _Server(ThreadingHTTPServer):
+    """Threading server that does not shout about clients hanging up.
+
+    A browser closes connections all the time — navigating away, closing the
+    tab, letting a keep-alive lapse — and the socket layer raises when the
+    reply has nowhere to go. socketserver's default is to print a full
+    traceback for each one, which buries the errors that actually matter under
+    pages of noise about nothing.
+    """
+
+    daemon_threads = True  # never let a stuck request block Ctrl+C
+
+    def handle_error(self, request, client_address):  # noqa: D102
+        error = sys.exc_info()[1]
+        if isinstance(error, (ConnectionResetError, ConnectionAbortedError,
+                              BrokenPipeError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def _render_cues(lesson: Lesson, by_id: dict[int, str]) -> list[dict]:
     """The cue list as the extension consumes it.
 
@@ -466,7 +487,7 @@ def serve(
 
     threading.Thread(target=_worker, daemon=True, name="udth-worker").start()
 
-    server = ThreadingHTTPServer((HOST, port), _Handler)
+    server = _Server((HOST, port), _Handler)
     print("=" * 58)
     print("  Udemy TH — เซิร์ฟเวอร์แปลซับและเสียงพากย์ พร้อมทำงาน")
     print("=" * 58)
