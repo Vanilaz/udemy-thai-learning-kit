@@ -23,7 +23,10 @@ async function checkHealth() {
     const response = await fetch(`${base}/health`, { cache: "no-store" });
     if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
     const data = await response.json();
-    return { ok: true, engine: data.engine };
+    // `voices` is the engine catalogue — which speech engines the server has,
+    // which are usable, and what each offers. The UI is built from it rather
+    // than from a hardcoded list, so adding an engine server-side is enough.
+    return { ok: true, engine: data.engine, voices: data.voices || [] };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
@@ -61,7 +64,72 @@ async function queueStatus() {
   return response.json();
 }
 
+// Audio synthesis is intentionally a short request like all other local-server
+// calls. The page prefetches a few upcoming cues and owns playback itself.
+async function synthesizeSpeech(payload) {
+  const base = await serverUrl();
+  const response = await fetch(`${base}/tts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `เซิร์ฟเวอร์ตอบ ${response.status}`);
+  return { ...data, url: `${base}${data.url}` };
+}
+
+// Read the caption list straight out of YouTube's live player object.
+//
+// A content script runs in an isolated world and cannot see the page's own
+// variables, and re-fetching the watch page HTML is unreliable — YouTube does
+// not always inline the caption list for a plain fetch, and after a
+// client-side navigation the original HTML is long gone anyway.
+//
+// `getPlayerResponse()` is the player's public method and always describes the
+// video actually loaded, so it survives navigation with no extra work.
+async function youtubeCaptionTracks(tabId) {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: () => {
+      const player = document.querySelector("#movie_player");
+      const response =
+        (player && player.getPlayerResponse && player.getPlayerResponse()) ||
+        window.ytInitialPlayerResponse ||
+        null;
+      if (!response) return { error: "no-player" };
+
+      const list = response.captions && response.captions.playerCaptionsTracklistRenderer;
+      const tracks = (list && list.captionTracks) || [];
+      // Only plain serialisable fields cross the world boundary.
+      return {
+        tracks: tracks.map((t) => ({
+          languageCode: t.languageCode || "",
+          kind: t.kind || "",
+          baseUrl: t.baseUrl || "",
+        })),
+      };
+    },
+  });
+
+  const value = (result && result.result) || {};
+  if (value.error) throw new Error(value.error);
+  return value.tracks || [];
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "youtubeCaptions") {
+    const tabId = sender.tab && sender.tab.id;
+    if (!tabId) {
+      sendResponse({ ok: false, error: "ไม่รู้ว่าอยู่แท็บไหน" });
+      return false;
+    }
+    youtubeCaptionTracks(tabId)
+      .then((tracks) => sendResponse({ ok: true, tracks }))
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
   if (message.type === "health") {
     checkHealth().then(sendResponse);
     return true;
@@ -83,6 +151,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "queueStatus") {
     queueStatus()
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
+  if (message.type === "synthesizeSpeech") {
+    synthesizeSpeech(message.payload)
       .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
     return true;

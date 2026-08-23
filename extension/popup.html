@@ -3,147 +3,78 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #ffffff;
-        --fg: #1a1c20;
-        --muted: #6b7280;
-        --line: #e5e7eb;
-        --accent: #5b3fd6;
-        /* Text sitting on the accent. Dark mode lightens the accent, so white
-           lettering drops to about 2.7:1 there — under the 4.5:1 minimum. The
-           readable colour flips with the theme, so it needs its own token. */
-        --on-accent: #ffffff;
-        --ok-bg: #e8f7ee;
-        --ok-fg: #1a7f45;
-        --err-bg: #fdecec;
-        --err-fg: #b42318;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #17181c;
-          --fg: #e8eaed;
-          --muted: #9aa0a6;
-          --line: #2c2f36;
-          --accent: #a48bff;
-          --on-accent: #1a1c20;
-          --ok-bg: #14311f;
-          --ok-fg: #7fe0a5;
-          --err-bg: #3a1414;
-          --err-fg: #ffb4ae;
-        }
-      }
-      * { box-sizing: border-box; }
-      body {
-        width: 290px;
-        margin: 0;
-        padding: 14px;
-        background: var(--bg);
-        color: var(--fg);
-        font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
-      }
-      h1 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
-      .status {
-        padding: 8px 10px;
-        border-radius: 8px;
-        background: var(--err-bg);
-        color: var(--err-fg);
-        font-weight: 550;
-        margin-bottom: 12px;
-      }
-      .status.ok { background: var(--ok-bg); color: var(--ok-fg); }
-      .row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 7px 0;
-        border-top: 1px solid var(--line);
-      }
-      label { cursor: pointer; }
-      .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
-      button {
-        width: 100%;
-        margin-top: 12px;
-        padding: 8px;
-        border: 0;
-        border-radius: 8px;
-        background: var(--accent);
-        color: var(--on-accent);
-        font: inherit;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      button:hover:not(:disabled) { filter: brightness(1.08); }
-      /* A disabled control must read as disabled and stop responding, not just
-         look slightly faded. */
-      button:disabled { opacity: 0.45; cursor: default; }
-      /* Secondary action: same size and hit area, lower visual weight, so the
-         primary button stays the obvious one. */
-      button.secondary {
-        margin-top: 8px;
-        border: 1px solid var(--line);
-        background: transparent;
-        color: var(--fg);
-      }
-      button.secondary:hover:not(:disabled) {
-        background: color-mix(in srgb, var(--fg) 8%, transparent);
-        filter: none;
-      }
-      .queue {
-        margin-top: 12px;
-        padding: 9px 10px;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-      }
-      .queue-title { font-weight: 600; }
-      .queue-detail {
-        margin-top: 2px;
-        color: var(--muted);
-        font-size: 12px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .queue-track {
-        margin-top: 8px;
-        height: 4px;
-        border-radius: 999px;
-        background: var(--line);
-        overflow: hidden;
-      }
-      .queue-fill {
-        height: 100%;
-        width: 0;
-        border-radius: inherit;
-        background: var(--accent);
-        transition: width 220ms ease-out;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .queue-fill { transition: none; }
-      }
-      code {
-        font-family: Consolas, monospace;
-        background: var(--line);
-        padding: 1px 4px;
-        border-radius: 3px;
-      }
+      :root { color-scheme: light dark; --bg:#fff; --surface:#f8f8fb; --fg:#18181d; --muted:#6f7080; --line:#e5e5ec; --accent:#6554d9; --accent-ink:#fff; --ok:#187a46; --ok-bg:#eaf8ef; --err:#b42318; --err-bg:#fff0ef; --focus:#9c8fff; }
+      @media (prefers-color-scheme: dark) { :root { --bg:#19191f; --surface:#24242c; --fg:#f1f0f6; --muted:#afafbd; --line:#353540; --accent:#9c8fff; --accent-ink:#19191f; --ok:#83dfa7; --ok-bg:#153524; --err:#ffb4aa; --err-bg:#41201e; --focus:#c6bdff; } }
+      * { box-sizing:border-box; }
+      body { width:336px; margin:0; padding:14px; background:var(--bg); color:var(--fg); font:13px/1.45 "Segoe UI", system-ui,sans-serif; }
+      button, select, input { font:inherit; }
+      button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+      .topbar { display:flex; align-items:center; justify-content:space-between; margin:2px 2px 14px; }
+      h1 { margin:0; font-size:15px; letter-spacing:-.01em; }
+      .version { color:var(--muted); font-size:11px; }
+      .status { display:flex; align-items:center; min-height:42px; padding:9px 11px; border-radius:10px; background:var(--err-bg); color:var(--err); font-weight:600; line-height:1.35; }
+      .status.ok { background:var(--ok-bg); color:var(--ok); }
+      .panel { margin-top:10px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface); }
+      .panel-title { padding:10px 12px 7px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.055em; text-transform:uppercase; }
+      .setting { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:46px; padding:8px 12px; border-top:1px solid var(--line); }
+      .setting:first-of-type { border-top:0; }
+      .setting-label { min-width:0; font-weight:600; }
+      .setting-help { display:block; margin-top:1px; color:var(--muted); font-size:11px; font-weight:400; }
+      .switch { position:relative; display:inline-flex; flex:0 0 auto; width:38px; height:22px; cursor:pointer; }
+      .switch input { position:absolute; inline-size:1px; block-size:1px; opacity:0; }
+      .switch span { position:absolute; inset:0; border-radius:999px; background:#a9aab5; transition:background 160ms ease; }
+      .switch span::after { content:""; position:absolute; width:16px; height:16px; top:3px; left:3px; border-radius:50%; background:#fff; box-shadow:0 1px 2px #0003; transition:transform 160ms ease; }
+      .switch input:checked + span { background:var(--accent); }
+      .switch input:checked + span::after { transform:translateX(16px); }
+      .switch input:focus-visible + span { outline:2px solid var(--focus); outline-offset:2px; }
+      .audio-settings { border-top:1px solid var(--line); padding:8px 12px 12px; }
+      .audio-settings[hidden] { display:none; }
+      .field { margin-top:9px; }
+      .field:first-child { margin-top:0; }
+      .field-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:5px; }
+      .field label { color:var(--muted); font-size:11px; font-weight:600; }
+      output { color:var(--fg); font-size:11px; font-variant-numeric:tabular-nums; }
+      select { width:100%; min-width:0; height:34px; padding:0 28px 0 9px; border:1px solid var(--line); border-radius:7px; color:var(--fg); background:var(--bg); }
+      input[type="range"] { width:100%; margin:0; accent-color:var(--accent); cursor:pointer; }
+      .actions { display:grid; gap:8px; margin-top:12px; }
+      button { min-height:38px; border:0; border-radius:9px; padding:8px 12px; background:var(--accent); color:var(--accent-ink); font-weight:700; cursor:pointer; transition:filter 160ms ease, transform 160ms ease; }
+      button:hover:not(:disabled) { filter:brightness(1.07); }
+      button:active:not(:disabled) { transform:translateY(1px); }
+      button:disabled { opacity:.45; cursor:default; }
+      button.secondary { border:1px solid var(--line); background:transparent; color:var(--fg); }
+      button.secondary:hover:not(:disabled) { background:color-mix(in srgb,var(--fg) 7%,transparent); filter:none; }
+      .queue { margin-top:10px; padding:10px 11px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+      .queue-title { font-weight:700; }
+      .queue-detail { margin-top:2px; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .queue-track { height:4px; margin-top:9px; overflow:hidden; border-radius:999px; background:var(--line); }
+      .queue-fill { width:0; height:100%; border-radius:inherit; background:var(--accent); transition:width 220ms ease-out; }
+      .hint { margin:12px 2px 0; color:var(--muted); font-size:11px; line-height:1.45; }
+      code { padding:1px 4px; border-radius:4px; background:var(--surface); font-family:Consolas,monospace; }
+      @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; } }
     </style>
   </head>
   <body>
-    <h1>Udemy ซับไทย</h1>
+    <header class="topbar"><h1>Udemy ซับไทย</h1><span class="version">เสียงพากย์</span></header>
     <div id="status" class="status">กำลังตรวจสอบ ...</div>
 
-    <div class="row">
-      <label for="enabled">แสดงซับไทย</label>
-      <input type="checkbox" id="enabled" checked />
-    </div>
-    <div class="row">
-      <label for="dual">แสดงอังกฤษด้วย</label>
-      <input type="checkbox" id="dual" checked />
-    </div>
+    <section class="panel" aria-labelledby="captions-title">
+      <div class="panel-title" id="captions-title">คำบรรยาย</div>
+      <div class="setting"><label class="setting-label" for="enabled">แสดงซับไทย</label><label class="switch" aria-label="แสดงซับไทย"><input type="checkbox" id="enabled" checked /><span></span></label></div>
+      <div class="setting"><label class="setting-label" for="dual">แสดงภาษาอังกฤษด้วย</label><label class="switch" aria-label="แสดงภาษาอังกฤษด้วย"><input type="checkbox" id="dual" checked /><span></span></label></div>
+    </section>
 
-    <button id="section">แปลทั้ง Section นี้ล่วงหน้า</button>
-    <button id="retry" class="secondary">แปลบทเรียนนี้ใหม่</button>
+    <section class="panel" aria-labelledby="voice-title">
+      <div class="panel-title" id="voice-title">เสียงพากย์</div>
+      <div class="setting"><div class="setting-label">พากย์ไทยด้วยเสียง HD<span class="setting-help">หยุดและตามต่อเมื่อ pause หรือ seek</span></div><label class="switch" aria-label="เปิดเสียงพากย์ไทย"><input type="checkbox" id="dubbing" /><span></span></label></div>
+      <div class="audio-settings" id="audioSettings" hidden>
+        <div class="field"><div class="field-head"><label for="ttsEngine">ระบบเสียง</label></div><select id="ttsEngine"></select></div>
+        <div class="field"><div class="field-head"><label for="voice">เสียง</label></div><select id="voice"><option value="">เลือกอัตโนมัติ</option></select></div>
+        <div class="field"><div class="field-head"><label for="dubbingVolume">ระดับเสียงพากย์</label><output id="dubbingValue" for="dubbingVolume">100%</output></div><input type="range" id="dubbingVolume" min="0" max="1" step="0.05" value="1" /></div>
+        <div class="field"><div class="field-head"><label for="originalAudioVolume">เสียงผู้สอน</label><output id="originalAudioValue" for="originalAudioVolume">15%</output></div><input type="range" id="originalAudioVolume" min="0" max="1" step="0.05" value="0.15" /></div>
+      </div>
+    </section>
+
+    <div class="actions"><button id="section">แปลทั้ง Section นี้ล่วงหน้า</button><button id="retry" class="secondary">แปลบทเรียนนี้ใหม่</button></div>
 
     <div class="queue" id="queue" style="display: none" aria-live="polite">
       <div class="queue-title" id="queueTitle"></div>

@@ -13,7 +13,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .glossary import Glossary
@@ -26,6 +28,13 @@ SAFE_PROMPT_CHARS = 24_000
 # `agy` gives a print-mode run 5 minutes by default; long lessons need more.
 PRINT_TIMEOUT = "15m"
 TIMEOUT_SECONDS = 1200
+
+# How many chunks of one lesson may be translated at the same time.
+#
+# Each is a separate `agy` process, so this trades memory and provider rate
+# limit against wall time. Three is enough to hide most of the latency without
+# making a laptop unusable; set UDTH_PARALLEL=1 to go back to one at a time.
+MAX_PARALLEL_CHUNKS = max(1, int(os.environ.get("UDTH_PARALLEL", "3")))
 
 _PROMPT_TEMPLATE = """\
 {system}
@@ -82,8 +91,13 @@ def translate_text(
     model: str | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     mode: str = "subtitle",
+    on_chunk: Callable[[int, str], None] | None = None,
 ) -> list[str]:
     """Translate a Lesson in memory; return each chunk's raw answer text.
+
+    `on_chunk(index, answer)` fires the moment each chunk comes back, so the
+    caller can publish a partial translation instead of making the viewer wait
+    for the whole lecture.
 
     `mode` picks the rule set: "subtitle" for caption lines, "doc" for article
     and handout prose (where code blocks must survive untranslated).
@@ -93,59 +107,135 @@ def translate_text(
     glossary_block = glossary.as_prompt_block(glossary.relevant_to(lesson.source_text))
     chunks = _pack(lesson, glossary_block, mode)
 
+    # Chunks are independent: each is rendered with the same glossary block and
+    # answers with its own line ids, and nothing is written to disk until every
+    # chunk is back. Running them one after another meant a four-chunk lecture
+    # took four times as long for no reason — the wait was process startup and
+    # model latency repeated, not work that had to be ordered.
+    #
+    # Whole *lectures* still run one at a time (see server.py): that queue
+    # exists to stop a batch spawning a dozen agy processes and to keep the
+    # shared glossary file from being written concurrently. Neither applies
+    # inside a single lecture.
+    if len(chunks) > 1 and MAX_PARALLEL_CHUNKS > 1:
+        return _translate_parallel(
+            agy, lesson, chunks, glossary_block, effort, model, on_progress, mode, on_chunk
+        )
+
     answers: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
-        prompt = _render(lesson, chunk, glossary_block, mode)
         label = f"[{index}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}"
         print(f"  {label} — กำลังแปลด้วย agy ...", flush=True)
-
-        command = [
-            agy,
-            "-p",
-            prompt,
-            "--output-format",
-            "text",
-            "--effort",
-            effort,
-            # Transcript lines can start with "/" and would otherwise be
-            # expanded as slash commands.
-            "--disable-slash-commands",
-            "--print-timeout",
-            PRINT_TIMEOUT,
-        ]
-        if model:
-            command += ["--model", model]
-
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=TIMEOUT_SECONDS,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                f"agy ใช้เวลานานเกิน {TIMEOUT_SECONDS} วินาที ที่ {label}"
-            ) from exc
-
-        output = (result.stdout or "").strip()
-        if result.returncode != 0:
-            detail = (result.stderr or "").strip() or output
-            raise RuntimeError(f"agy ล้มเหลว (exit {result.returncode}): {detail[:500]}")
-        if "## SUBTITLES" not in output:
-            detail = output[:400] or (result.stderr or "").strip()[:400]
-            raise RuntimeError(
-                f"agy ตอบไม่ตรงรูปแบบที่ {label} — ไม่พบหัวข้อ '## SUBTITLES'\n{detail}"
-            )
-
-        answers.append(output)
+        answer = _run_chunk(agy, lesson, chunk, glossary_block, effort, model, mode, label)
+        answers.append(answer)
+        if on_chunk:
+            on_chunk(index - 1, answer)
         if on_progress:
             on_progress(index, len(chunks))
 
     return answers
+
+
+def _run_chunk(
+    agy: str,
+    lesson: Lesson,
+    chunk: list[Segment],
+    glossary_block: str,
+    effort: str,
+    model: str | None,
+    mode: str,
+    label: str,
+) -> str:
+    """One agy invocation. Shared by the serial and parallel paths."""
+    command = [
+        agy,
+        "-p",
+        _render(lesson, chunk, glossary_block, mode),
+        "--output-format",
+        "text",
+        "--effort",
+        effort,
+        # Transcript lines can start with "/" and would otherwise be expanded
+        # as slash commands.
+        "--disable-slash-commands",
+        "--print-timeout",
+        PRINT_TIMEOUT,
+    ]
+    if model:
+        command += ["--model", model]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"agy ใช้เวลานานเกิน {TIMEOUT_SECONDS} วินาที ที่ {label}") from exc
+
+    output = (result.stdout or "").strip()
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip() or output
+        raise RuntimeError(f"agy ล้มเหลว (exit {result.returncode}): {detail[:500]}")
+    if "## SUBTITLES" not in output:
+        detail = output[:400] or (result.stderr or "").strip()[:400]
+        raise RuntimeError(
+            f"agy ตอบไม่ตรงรูปแบบที่ {label} — ไม่พบหัวข้อ '## SUBTITLES'\n{detail}"
+        )
+    return output
+
+
+def _translate_parallel(
+    agy: str,
+    lesson: Lesson,
+    chunks: list[list[Segment]],
+    glossary_block: str,
+    effort: str,
+    model: str | None,
+    on_progress: Callable[[int, int], None] | None,
+    mode: str,
+    on_chunk: Callable[[int, str], None] | None = None,
+) -> list[str]:
+    workers = min(MAX_PARALLEL_CHUNKS, len(chunks))
+    print(f"  แปล {len(chunks)} ช่วงพร้อมกัน {workers} ตัว ...", flush=True)
+
+    answers: list[str | None] = [None] * len(chunks)
+    done = 0
+    lock = threading.Lock()
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(
+                _run_chunk,
+                agy,
+                lesson,
+                chunk,
+                glossary_block,
+                effort,
+                model,
+                mode,
+                f"[{i + 1}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}",
+            ): i
+            for i, chunk in enumerate(chunks)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            # Let the first failure propagate: a lecture missing a chunk is not
+            # a partial success, and the caller reports it to the extension.
+            answers[index] = future.result()
+            with lock:
+                if on_chunk:
+                    on_chunk(index, answers[index])
+                done += 1
+                print(f"  เสร็จ {done}/{len(chunks)} ช่วง", flush=True)
+                if on_progress:
+                    on_progress(done, len(chunks))
+
+    return [a for a in answers if a is not None]
 
 
 def translate(

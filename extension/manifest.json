@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Udemy ซับไทย (AI)",
-  "version": "0.1.0",
-  "description": "แปลซับ Udemy เป็นไทยด้วย AI ในเครื่องคุณเอง แสดงทับบนวิดีโอ",
-  "permissions": ["storage", "activeTab"],
+  "name": "ฮองเรียน — HongRian",
+  "version": "0.4.0",
+  "description": "ซับไทยและเสียงพากย์ไทยด้วย AI บนวิดีโอ Udemy และ YouTube",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "host_permissions": [
     "https://www.udemy.com/*",
+    "https://www.youtube.com/*",
     "http://127.0.0.1:8765/*"
   ],
   "background": {
@@ -13,15 +20,32 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.udemy.com/course/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://www.udemy.com/course/*",
+        "https://www.youtube.com/watch*",
+        "https://www.youtube.com/shorts/*"
+      ],
+      "js": ["sites.js", "content.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["pot-interceptor.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
       "all_frames": false
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Udemy ซับไทย"
+    "default_title": "ฮองเรียน — ซับไทยและเสียงพากย์",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }
