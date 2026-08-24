@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
+import re
 import threading
+import wave
 from datetime import datetime
 from pathlib import Path
 
@@ -29,6 +32,91 @@ DEFAULT_MONTHLY_LIMIT = 900_000
 # If Google is in fact billing per character, this only makes the local cap
 # arrive early, which is the harmless direction to be wrong in.
 MAX_REQUEST_BYTES = 5_000
+
+# Chirp 3 HD also refuses any *single* request whose text runs much past ~900
+# bytes.  It reports this as "sentences that are too long" and suggests adding
+# sentence-ending punctuation, which is a red herring: measured against the
+# live API, 880 bytes is accepted and 950 is rejected whether the text is one
+# long run or eight short punctuated sentences.  The cap is on the request, so
+# the only fix is to send less text at a time.
+#
+# This is why Chirp worked on Udemy but not on YouTube.  Udemy's captions are
+# punctuated, so a dubbing segment is one sentence and stays small.  YouTube's
+# auto-captions have no punctuation at all, so segments merge up to the
+# 14-second ceiling and the Thai for that lands well over the limit.
+CHIRP_MAX_BYTES = 800
+
+# Thai vowels and tone marks are separate code points that attach to the
+# consonant before them.  Cutting between the two corrupts the syllable, so a
+# hard split has to back up past them.
+THAI_COMBINING = "ัิีึืฺุู็่้๊๋์ํ๎"
+
+
+def _cut(text: str, limit: int) -> tuple[str, str]:
+    """Split one over-long run at the last character boundary that fits."""
+    size = 0
+    cut = 0
+    for index, char in enumerate(text):
+        width = len(char.encode("utf-8"))
+        if size + width > limit:
+            break
+        size += width
+        cut = index + 1
+    while 0 < cut < len(text) and text[cut] in THAI_COMBINING:
+        cut -= 1
+    if cut <= 0:  # a single character wider than the limit cannot happen
+        cut = 1
+    return text[:cut], text[cut:]
+
+
+def split_for_request(text: str, limit: int = CHIRP_MAX_BYTES) -> list[str]:
+    """Break text into pieces small enough for one Chirp request.
+
+    Splits at spaces first — Thai marks phrase boundaries with a space, so a
+    seam there falls where a speaker would have paused anyway.  Only a run with
+    no space in it at all is cut mid-word.
+    """
+    if len(text.encode("utf-8")) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+    for piece in re.findall(r"\S+\s*", text):
+        if current and len((current + piece).encode("utf-8")) > limit:
+            chunks.append(current.strip())
+            current = piece
+        else:
+            current += piece
+        while len(current.encode("utf-8")) > limit:
+            head, current = _cut(current, limit)
+            chunks.append(head.strip())
+    if current.strip():
+        chunks.append(current.strip())
+    return [chunk for chunk in chunks if chunk]
+
+
+def join_wav(parts: list[bytes]) -> bytes:
+    """Concatenate LINEAR16 responses into one WAV with an exact header.
+
+    The pieces are joined as audio rather than as bytes because the extension
+    fits its playback rate to `audio.duration`, and a browser only reports that
+    exactly when the header agrees with what follows it.
+    """
+    out = io.BytesIO()
+    writer = None
+    try:
+        for part in parts:
+            with wave.open(io.BytesIO(part), "rb") as reader:
+                if writer is None:
+                    writer = wave.open(out, "wb")
+                    writer.setnchannels(reader.getnchannels())
+                    writer.setsampwidth(reader.getsampwidth())
+                    writer.setframerate(reader.getframerate())
+                writer.writeframes(reader.readframes(reader.getnframes()))
+    finally:
+        if writer is not None:
+            writer.close()
+    return out.getvalue()
 
 
 class TtsError(RuntimeError):
@@ -98,7 +186,10 @@ class GoogleTts:
             raise TtsError("เลือกได้เฉพาะเสียงไทย Google Chirp 3 HD")
 
         digest = hashlib.sha256(f"{voice}\0{text}".encode("utf-8")).hexdigest()[:24]
-        filename = f"{digest}.mp3"
+        # One request keeps the cheaper MP3; a split one is joined as WAV,
+        # which is the only format that can be concatenated without an encoder.
+        chunks = split_for_request(text)
+        filename = f"{digest}{'.mp3' if len(chunks) == 1 else '.wav'}"
         output = self.cache_dir / filename
         if output.exists() and output.stat().st_size:
             return {"file": filename, "cached": True}
@@ -126,20 +217,32 @@ class GoogleTts:
 
             client, tts = self._client_and_types()
             try:
-                response = client.synthesize_speech(
-                    input=tts.SynthesisInput(text=text),
-                    voice=tts.VoiceSelectionParams(language_code="th-TH", name=voice),
-                    audio_config=tts.AudioConfig(audio_encoding=tts.AudioEncoding.MP3),
-                )
+                if len(chunks) == 1:
+                    audio = self._speak(client, tts, chunks[0], voice, mp3=True)
+                else:
+                    audio = join_wav(
+                        [self._speak(client, tts, chunk, voice, mp3=False) for chunk in chunks]
+                    )
             except Exception as exc:  # provider errors are made actionable below
                 raise TtsError(f"Google Cloud สร้างเสียงไม่สำเร็จ: {exc}") from exc
 
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            output.write_bytes(response.audio_content)
+            output.write_bytes(audio)
             usage["bytes"] += len(payload)
             usage["characters"] += len(text)
             self._save_usage(usage)
             return {"file": filename, "cached": False}
+
+    @staticmethod
+    def _speak(client, tts, text: str, voice: str, *, mp3: bool) -> bytes:
+        response = client.synthesize_speech(
+            input=tts.SynthesisInput(text=text),
+            voice=tts.VoiceSelectionParams(language_code="th-TH", name=voice),
+            audio_config=tts.AudioConfig(
+                audio_encoding=tts.AudioEncoding.MP3 if mp3 else tts.AudioEncoding.LINEAR16
+            ),
+        )
+        return response.audio_content
 
     def _usage(self) -> dict:
         month = datetime.now().strftime("%Y-%m")
