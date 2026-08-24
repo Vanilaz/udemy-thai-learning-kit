@@ -13,7 +13,8 @@
   "host_permissions": [
     "https://www.udemy.com/*",
     "https://www.youtube.com/*",
-    "http://127.0.0.1:8765/*"
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
   "background": {
     "service_worker": "background.js"

@@ -764,9 +764,24 @@
   // after a seek, lecture change, or voice/engine switch.
   function resetAudioCache() {
     state.audioGeneration += 1;
+    // These are blob URLs, and a blob stays in memory until its last URL is
+    // revoked. A three-hour course would otherwise end holding every line it
+    // ever spoke.
+    state.audioUrls.forEach((url) => URL.revokeObjectURL(url));
     state.audioUrls.clear();
     state.audioPending.clear();
     state.audioElements.clear();
+  }
+
+  // The audio arrives as bytes rather than as a URL to fetch, because the page
+  // is not always allowed to reach the local server — see synthesizeSpeech in
+  // background.js. Turning it into a blob gives back a URL the page owns
+  // outright, so playback no longer depends on a per-site permission.
+  function blobUrl(data) {
+    const binary = atob(data.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: data.type || "audio/mpeg" }));
   }
 
   // Knowing the URL is not the same as being ready to play it: the browser
@@ -807,8 +822,9 @@
       })
       .then((res) => {
         if (!res || !res.ok) throw new Error((res && res.error) || "สร้างเสียงไม่สำเร็จ");
-        const url = res.data.url;
+        // Checked before the blob is built, so a stale reply allocates nothing.
         if (generation !== state.audioGeneration) return null;
+        const url = blobUrl(res.data);
         state.audioUrls.set(index, url);
         preloadAudio(index, url);
         return url;
@@ -965,6 +981,24 @@
     // then long since fired — so the rate must be applied directly as well.
     if (audio.readyState >= 1) applyRate();
     else audio.addEventListener("loadedmetadata", applyRate);
+
+    // An element that neither loads nor errors is otherwise invisible: the
+    // 45-second watchdog eventually steps over it and the only symptom is
+    // silence. That is exactly how a browser-level block on reaching the local
+    // server looked, and it cost a long hunt through the speech engines to
+    // find. Say so instead.
+    const stalled = setTimeout(() => {
+      if (state.dub.token === token && audio.readyState < 1) {
+        log("เสียงโหลดไม่ขึ้นและไม่แจ้ง error", {
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+          src: String(audio.src).slice(0, 60),
+        });
+      }
+    }, 3000);
+    const clearStall = () => clearTimeout(stalled);
+    audio.addEventListener("loadedmetadata", clearStall);
+    audio.addEventListener("error", clearStall);
 
     state.audio = audio;
     try {

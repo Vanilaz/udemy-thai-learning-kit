@@ -64,8 +64,34 @@ async function queueStatus() {
   return response.json();
 }
 
+// Extension messages are serialised as JSON, so audio has to travel as text.
+// Done in 32KB slices because String.fromCharCode(...bytes) on a whole file
+// overflows the argument stack once a clip runs past a second or two.
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const slice = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += slice) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + slice));
+  }
+  return btoa(binary);
+}
+
 // Audio synthesis is intentionally a short request like all other local-server
 // calls. The page prefetches a few upcoming cues and owns playback itself.
+//
+// The finished audio is read here and handed back as bytes rather than as a
+// URL for the page to load, because a page may not be allowed to reach the
+// server at all. Chrome gates requests from a public site to a local address
+// behind the Local Network Access permission, and that permission is granted
+// per site: it was granted for udemy.com and left unasked on youtube.com, so
+// an <audio src="http://127.0.0.1:...">  there never loaded and never failed —
+// it just hung, and every dubbed line went silent with no error to show. The
+// service worker holds a host permission for the server and is not subject to
+// that gate, so the bytes come through here and reach the page as a blob it
+// already owns. Windows Natural kept working throughout because it speaks in
+// the browser and never touches the server, which is what made this look like
+// a text-to-speech bug rather than a network one.
 async function synthesizeSpeech(payload) {
   const base = await serverUrl();
   const response = await fetch(`${base}/tts`, {
@@ -75,7 +101,14 @@ async function synthesizeSpeech(payload) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `เซิร์ฟเวอร์ตอบ ${response.status}`);
-  return { ...data, url: `${base}${data.url}` };
+
+  const audio = await fetch(`${base}${data.url}`);
+  if (!audio.ok) throw new Error(`อ่านไฟล์เสียงไม่ได้ (HTTP ${audio.status})`);
+  return {
+    ...data,
+    type: audio.headers.get("Content-Type") || "audio/mpeg",
+    base64: toBase64(await audio.arrayBuffer()),
+  };
 }
 
 // Read the caption list straight out of YouTube's live player object.
