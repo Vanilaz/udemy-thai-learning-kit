@@ -9,6 +9,7 @@ produces, so `build` handles both without caring which was used.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .glossary import Glossary
@@ -17,6 +18,21 @@ from .prepare import MAX_SEGMENTS_PER_PART
 from .prompts import DOC_OUTPUT_FORMAT, DOC_RULES, OUTPUT_FORMAT, RULES, SYSTEM
 
 MODEL = "claude-opus-4-8"
+
+# Subtitle lines are short spoken sentences, and there are thousands of them in
+# a course. A small fast model turns the first-play wait from a minute into a
+# few seconds for a quality difference that barely shows on caption text —
+# which is the whole reason the paid tools feel instant.
+#
+# Opt in with UDTH_FAST=1; documents and quizzes keep the careful model either
+# way, since those are read closely and contain code and exam wording.
+FAST_MODEL = "claude-haiku-4-5"
+
+
+def model_for(mode: str) -> str:
+    if mode == "subtitle" and os.environ.get("UDTH_FAST") == "1":
+        return os.environ.get("UDTH_FAST_MODEL") or FAST_MODEL
+    return os.environ.get("UDTH_MODEL") or MODEL
 # Streaming is required at this size — a non-streaming request would risk an
 # HTTP timeout before the model finishes a long lecture.
 MAX_TOKENS = 64_000
@@ -82,13 +98,16 @@ def translate_text(
             ),
         )
 
+        model = model_for(mode)
         try:
             with client.messages.stream(
-                model=MODEL,
+                model=model,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM,
                 thinking={"type": "adaptive"},
-                output_config={"effort": "high"},
+                # Subtitles do not benefit from a deep reasoning pass the way
+                # handout prose and exam wording do; the wait is what costs.
+                output_config={"effort": "medium" if mode == "subtitle" else "high"},
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
                 response = stream.get_final_message()

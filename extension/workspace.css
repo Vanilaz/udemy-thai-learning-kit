@@ -1,0 +1,55 @@
+.hr-manager { margin: 0; background: #f7f7fb; color-scheme: light dark; }
+.hr-workspace {
+  --hr-bg: #fff; --hr-surface: #f7f7fb; --hr-text: #20202b; --hr-muted: #626277;
+  --hr-line: #dfdfeb; --hr-accent: #5846c7; --hr-error: #a22024;
+  box-sizing: border-box; position: fixed; right: 16px; bottom: 16px;
+  z-index: 2147483500; width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain;
+  background: var(--hr-bg); color: var(--hr-text); border: 1px solid var(--hr-line);
+  border-radius: 16px; box-shadow: 0 12px 50px #0003;
+  font: 14px/1.65 "Segoe UI", Tahoma, sans-serif; text-align: left;
+}
+.hr-workspace *, .hr-workspace *::before, .hr-workspace *::after { box-sizing: border-box; }
+.hr-workspace [hidden], .hr-workspace[hidden] { display: none !important; }
+.hr-workspace button, .hr-workspace input { font: inherit; color: inherit; }
+.hr-workspace button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--hr-line); border-radius: 8px; background: var(--hr-bg); cursor: pointer; }
+.hr-workspace button:hover { background: var(--hr-surface); }
+.hr-workspace button:disabled { opacity: .55; cursor: default; }
+.hr-workspace button:focus-visible, .hr-workspace input:focus-visible { outline: 3px solid var(--hr-accent); outline-offset: 2px; }
+.hr-workspace p { margin: 0; }
+.hr-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid var(--hr-line); }
+.hr-workspace h2 { margin: 0; font: 600 19px/1.5 "Segoe UI", Tahoma, sans-serif; color: var(--hr-text); }
+.hr-brand { font-size: 12px; color: var(--hr-accent); font-weight: 700; }
+.hr-tabs { display: flex; gap: 8px; padding: 12px 20px; background: var(--hr-surface); }
+.hr-tabs button { flex: 1; }
+.hr-tabs button[aria-pressed="true"] { border-color: var(--hr-accent); color: var(--hr-accent); font-weight: 700; }
+.hr-transcript, .hr-queue { padding: 16px 20px 20px; }
+.hr-lesson { font-weight: 600; overflow-wrap: anywhere; margin-bottom: 16px !important; }
+.hr-search-label { display: block; font-weight: 600; }
+.hr-workspace input[type="search"] { display: block; width: 100%; min-height: 46px; padding: 10px; margin: 6px 0 12px; background: var(--hr-bg); border: 1px solid var(--hr-line); border-radius: 8px; font-size: 16px; }
+.hr-count, .hr-help, .hr-empty { color: var(--hr-muted); font-size: 13px; margin-bottom: 14px !important; }
+.hr-cue { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--hr-line); }
+.hr-workspace .hr-time { align-self: start; padding: 8px 4px; font-variant-numeric: tabular-nums; color: var(--hr-accent); }
+.hr-th { font-weight: 600; overflow-wrap: anywhere; }
+.hr-en { color: var(--hr-muted); margin-top: 6px !important; overflow-wrap: anywhere; }
+.hr-more { width: 100%; margin-top: 12px; }
+.hr-queue-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.hr-queue-summary { font-size: 13px; }
+.hr-error { color: var(--hr-error); border-left: 3px solid currentColor; padding: 8px 12px; margin: 12px 0 !important; overflow-wrap: anywhere; }
+.hr-job { border: 1px solid var(--hr-line); border-radius: 12px; padding: 16px; margin-top: 12px; }
+.hr-workspace h3 { margin: 0; font: 600 15px/1.6 "Segoe UI", Tahoma, sans-serif; color: var(--hr-text); overflow-wrap: anywhere; }
+.hr-job-meta { color: var(--hr-muted); font-size: 12px; margin-top: 4px !important; overflow-wrap: anywhere; }
+.hr-job-detail { margin-top: 8px !important; overflow-wrap: anywhere; }
+.hr-job button { margin-top: 12px; }
+.hr-workspace-page { position: relative; right: auto; bottom: auto; width: min(760px, calc(100% - 32px)); max-height: none; margin: 32px auto; box-shadow: none; }
+@media (max-width: 480px) {
+  .hr-workspace { right: 8px; bottom: 8px; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .hr-head { padding: 16px; }
+  .hr-tabs { padding: 12px 16px; }
+  .hr-transcript, .hr-queue { padding: 16px; }
+  .hr-workspace-page { right: auto; bottom: auto; margin: 8px auto; max-height: none; }
+}
+@media (prefers-color-scheme: dark) {
+  .hr-manager { background: #14141c; }
+  .hr-workspace { --hr-bg: #1c1c25; --hr-surface: #262633; --hr-text: #f2f1f8; --hr-muted: #b9b8cb; --hr-line: #414155; --hr-accent: #c0b5ff; --hr-error: #ffb4b8; }
+}

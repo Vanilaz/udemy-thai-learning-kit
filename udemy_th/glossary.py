@@ -42,9 +42,16 @@ class Glossary:
                 for t in sorted(self.terms.values(), key=lambda t: t.term.lower())
             ]
         }
-        self.path.write_text(
+        # Written through a temporary file: lectures are translated
+        # concurrently, so another worker may be reading this file right now,
+        # and a rename is the only way to swap it without ever exposing a
+        # half-written one. Also means a crash mid-write cannot destroy the
+        # glossary that took a whole course to build.
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        temporary.replace(self.path)
 
     def add(self, term: Term) -> bool:
         """Add a term, or merely record a new sighting of a known one.
