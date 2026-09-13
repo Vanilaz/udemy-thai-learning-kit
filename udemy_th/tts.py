@@ -77,6 +77,9 @@ class TtsRegistry:
                     "unlimited": bool(status.get("unlimited")),
                     "used": status.get("used"),
                     "limit": status.get("limit"),
+                    "unit": status.get("unit"),
+                    "characters": status.get("characters"),
+                    "remaining": status.get("remaining"),
                     "voices": [
                         {"id": vid, "label": label} for vid, label in engine.voices.items()
                     ],

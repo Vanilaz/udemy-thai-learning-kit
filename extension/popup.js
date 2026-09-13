@@ -27,6 +27,27 @@ let knownNativeVoices = [];
 let optionsTouched = false;
 let queueBusy = false;
 
+function renderGoogleQuota() {
+  const card = document.getElementById("googleQuota");
+  const engine = serverEngines.find(item => item.name === "google");
+  card.hidden = !engine;
+  if (!engine) return;
+  const valid = Number.isFinite(engine.used) && Number.isFinite(engine.limit) && engine.limit > 0;
+  const percent = valid ? Math.min(100, Math.max(0, engine.used / engine.limit * 100)) : 0;
+  const remaining = valid ? Math.max(0, engine.limit - engine.used) : null;
+  const format = value => value.toLocaleString("th-TH");
+  card.className = `quota${valid && percent >= 80 ? " warn" : ""}`;
+  document.getElementById("quotaRemaining").textContent = valid ? `${format(remaining)} ไบต์` : "ยังอ่านยอดไม่ได้";
+  document.getElementById("quotaDetail").textContent = valid
+    ? `เหลือถึงเพดานในเครื่อง · ใช้ ${format(engine.used)} / ${format(engine.limit)} ไบต์`
+    : "ตรวจการตั้งค่า Google แล้วเปิดหน้าต่างนี้ใหม่";
+  document.getElementById("quotaBadge").textContent = !valid ? "ยอดไม่พร้อม"
+    : percent >= 100 ? "ถึงเพดานแล้ว" : percent >= 80 ? "ใกล้เพดานแล้ว" : `ใช้ ${Math.round(percent)}%`;
+  document.getElementById("quotaFill").style.width = `${percent}%`;
+  document.getElementById("quotaProgress").setAttribute("aria-valuenow", String(Math.round(percent)));
+  document.getElementById("switchEdge").disabled = !serverEngines.some(item => item.name === "edge" && item.ready) || ttsEngineEl.value === "edge";
+}
+
 function withTimeout(promise, milliseconds = 4000) {
   let timer;
   return Promise.race([
@@ -48,6 +69,7 @@ function applySettings(state) {
   dubbingVolumeEl.value = String(state.dubbingVolume ?? 1);
   originalAudioVolumeEl.value = String(state.originalAudioVolume ?? 0.15);
   syncAudioControls();
+  renderGoogleQuota();
 }
 
 async function loadSettings() {
@@ -66,7 +88,8 @@ async function loadSettings() {
 }
 
 function syncAudioControls() {
-  audioSettingsEl.hidden = !dubbingEl.checked;
+  audioSettingsEl.hidden = false;
+  document.getElementById("audioNotice").hidden = dubbingEl.checked;
   dubbingValueEl.value = `${Math.round(Number(dubbingVolumeEl.value) * 100)}%`;
   originalAudioValueEl.value = `${Math.round(Number(originalAudioVolumeEl.value) * 100)}%`;
 }
@@ -145,6 +168,7 @@ async function refresh() {
 
   if (health && health.ok) {
     serverEngines = health.voices || [];
+    renderGoogleQuota();
     const selectedVoice = voiceEl.value;
     fillEngineOptions(ttsEngineEl.value || "edge");
     fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, selectedVoice);
@@ -249,6 +273,7 @@ async function refreshQueue() {
 
 async function pushOptions() {
   optionsTouched = true;
+  renderGoogleQuota();
   const options = {
     enabled: enabledEl.checked,
     dualMode: dualEl.checked,
@@ -273,6 +298,15 @@ ttsEngineEl.addEventListener("change", () => {
   pushOptions();
 });
 voiceEl.addEventListener("change", pushOptions);
+document.getElementById("switchEdge").addEventListener("click", async () => {
+  const edge = serverEngines.find(engine => engine.name === "edge" && engine.ready);
+  if (!edge) return;
+  ttsEngineEl.value = "edge";
+  fillVoiceOptions("edge", knownNativeVoices, "th-TH-NiwatNeural");
+  await pushOptions();
+  statusEl.className = "status ok";
+  statusEl.textContent = "เปลี่ยนระบบเสียงเป็น Edge แล้ว";
+});
 dubbingVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
 originalAudioVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
 
@@ -331,6 +365,31 @@ sectionEl.addEventListener("click", async () => {
   }
 });
 
+const popupPages = ["learning", "audio", "usage"];
+function selectPopupPage(selected, focus = false) {
+  for (const page of popupPages) {
+    const tab = document.getElementById(`tab-${page}`);
+    const active = page === selected;
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+    document.getElementById(`page-${page}`).hidden = !active;
+    if (active && focus) tab.focus();
+  }
+}
+for (const [index, page] of popupPages.entries()) {
+  const tab = document.getElementById(`tab-${page}`);
+  tab.addEventListener("click", () => selectPopupPage(page));
+  tab.addEventListener("keydown", event => {
+    const target = event.key === "ArrowRight" ? (index + 1) % 3
+      : event.key === "ArrowLeft" ? (index + 2) % 3
+      : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
+    if (target < 0) return;
+    event.preventDefault();
+    selectPopupPage(popupPages[target], true);
+  });
+}
+document.getElementById("openAudio").addEventListener("click", () => selectPopupPage("audio", true));
+selectPopupPage("learning");
 fillEngineOptions("edge");
 fillVoiceOptions("edge", [], "");
 syncAudioControls();

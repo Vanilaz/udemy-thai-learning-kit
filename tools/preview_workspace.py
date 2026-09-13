@@ -4,7 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = {"workspace.js", "workspace.css", "content.js", "overlay.css", "sites.js", "popup.js"}
+ASSETS = {"workspace.js", "workspace.css", "content.js", "overlay.css", "sites.js", "popup.js", "popup.css"}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -12,6 +12,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split("?", 1)[0] == "/popup.html":
             html = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
             html = html.replace('<script src="popup.js"></script>', '<script src="popup-fixture.js"></script><script src="extension/popup.js"></script>')
+            html = html.replace('href="popup.css"', 'href="extension/popup.css"')
             data = html.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
