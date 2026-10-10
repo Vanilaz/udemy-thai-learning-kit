@@ -40,13 +40,12 @@ button.classList.add('udth-pill-floating');host.appendChild(button);
 const el=document.createElement('div');el.className='udth-menu';el.hidden=true;
 ${menuHtml}
 host.appendChild(el);panel.el=el;panel.button=button;
-el.querySelector('[data-udth=subs]').classList.add('udth-chip-on');el.querySelector('[data-state=subs]').textContent='เปิดอยู่';
+el.querySelector('[data-udth=mode][data-val=both]').classList.add('udth-seg-on');el.querySelector('[data-udth=size][data-val=m]').classList.add('udth-seg-on');
 for(const k of ['dubVol','srcVol','rate'])el.querySelector('[data-udth='+k+']').value=k==='rate'?1.6:(k==='dubVol'?1:0.15);
 el.querySelector('[data-udth=dubVolOut]').value='100%';el.querySelector('[data-udth=srcVolOut]').value='15%';el.querySelector('[data-udth=rateOut]').value='1.60x';
 el.querySelector('[data-udth=engine]').innerHTML='<option>Google Chirp 3 HD</option>';el.querySelector('[data-udth=voice]').innerHTML='<option>Gacrux — หญิง</option>';
-el.querySelector('[data-udth=dual]').checked=true;
-const o=document.createElement('div');o.className='udth-overlay';const l=document.createElement('div');l.className='udth-line';o.appendChild(l);host.appendChild(o);state.overlay=o;state.line=l;
-l.innerHTML='<div class="udth-en">Hey guys what\\'s up, I welcome you to another tutorial on this section where we are covering</div><div class="udth-th" lang="th">สวัสดีครับทุกคน ยินดีต้อนรับสู่ Tutorial (บทเรียนแนะนำทีละขั้นตอน) อีกตอนในหมวดนี้ที่เรากำลังเรียน</div>';
+const o=document.createElement('div');o.className='udth-overlay';o.dataset.size='m';const l=document.createElement('div');l.className='udth-line';o.appendChild(l);host.appendChild(o);state.overlay=o;state.line=l;
+l.innerHTML='<div class="udth-en">Hey guys what\\'s up, I welcome you to another tutorial on this section where we are covering</div><div class="udth-th" lang="th"><span>สวัสดีครับทุกคน ยินดีต้อนรับสู่ Tutorial (บทเรียนแนะนำทีละขั้นตอน) อีกตอนในหมวดนี้ที่เรากำลังเรียน</span></div>';
 window.docked=dockButton(button);button.classList.add('udth-pill-on');
 host.addEventListener('mousemove',onPointerActivity);
 window.openMenu=()=>{panel.open=true;el.hidden=false;placeOverlay()};
@@ -54,7 +53,7 @@ window.openMenu=()=>{panel.open=true;el.hidden=false;placeOverlay()};
 const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1100, height: 520 } })
 const errs = []; p.on('pageerror', (e) => errs.push(e.message))
 await p.setContent(page, { waitUntil: 'load' })
-const _b = () => p.evaluate(() => ({ bottom: document.querySelector('.udth-overlay').style.bottom, raised: document.querySelector('.udth-overlay').classList.contains('udth-raised') }))
+const bottoms = () => p.evaluate(() => ({ bottom: document.querySelector('.udth-overlay').style.bottom, raised: document.querySelector('.udth-overlay').classList.contains('udth-raised') }))
 await p.mouse.move(500, 300); await p.waitForTimeout(300)
 const shown = await bottoms(); await p.screenshot({ path: 'C:/Users/ADMINI~1/AppData/Local/Temp/rd_controls.png' })
 await p.waitForTimeout(3300)

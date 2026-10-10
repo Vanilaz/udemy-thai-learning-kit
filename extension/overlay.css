@@ -24,96 +24,76 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   justify-content: center;
   pointer-events: none;
-  padding: 0 5%;
+  padding: 0 8%;
   box-sizing: border-box;
-  transition: bottom 120ms ease-out;
 }
 
 .udth-line {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
-  max-width: min(100%, 760px);
+  gap: 3px;
+  max-width: min(100%, 700px);
   text-align: center;
 }
 
-/* One caption card, not two stacked boxes: Thai on top, the English reference
-   as a quiet second row under a hairline, an accent edge on the left. Only a
-   line that actually holds subtitle text becomes the card, so status badges
-   keep their own look. */
-.udth-line:has(.udth-th, .udth-en) {
-  position: relative;
-  padding: 7px 18px 9px;
-  border-radius: 10px;
-  background: rgba(6, 10, 15, 0.94);
-  backdrop-filter: blur(10px) saturate(150%);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-  animation: udth-cue-in 140ms ease-out;
-}
-
-.udth-line:has(.udth-th, .udth-en)::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #0ea5e9, #14b8a6, #34d399);
-}
-
-@keyframes udth-cue-in {
-  from {
-    opacity: 0.4;
-    transform: translateY(4px);
-  }
-}
-
-.udth-en,
-.udth-th {
+/* No card. Each wrapped line gets its own snug dark strip (an inline span with
+   box-decoration-break: clone), so the picture stays visible around and between
+   the words. The Thai is large and white; English is a small second row. */
+.udth-th,
+.udth-en {
   display: block;
-  max-width: 100%;
   margin: 0;
   padding: 0;
-  background: none;
-  color: #fff;
+  max-width: 100%;
   font-family: "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
   text-wrap: balance;
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
 }
 
-.udth-th {
-  font-size: clamp(16px, 1.6vw, 22px);
+.udth-th span,
+.udth-en span {
+  padding: 1px 10px 3px;
+  border-radius: 6px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.udth-th span {
+  background: rgba(0, 0, 0, 0.66);
+  color: #fff;
+  font-size: var(--udth-th, 20px);
   font-weight: 600;
-  line-height: 1.55; /* enough for Thai tone marks, not so much it eats the picture */
-  letter-spacing: 0;
+  line-height: 1.75;
   word-break: normal;
   line-break: strict;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .udth-en {
   order: 2;
-  margin-top: 3px;
-  padding-top: 3px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: clamp(11.5px, 1vw, 14px);
-  font-weight: 400;
-  line-height: 1.45;
-  color: #b9bfcd;
 }
+
+.udth-en span {
+  background: rgba(0, 0, 0, 0.5);
+  color: #d6dbe6;
+  font-size: var(--udth-en, 14px);
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.udth-overlay[data-size="s"] { --udth-th: clamp(14px, 1.25vw, 18px); --udth-en: clamp(11px, 0.9vw, 13px); }
+.udth-overlay[data-size="m"], .udth-overlay:not([data-size]) { --udth-th: clamp(16px, 1.6vw, 22px); --udth-en: clamp(12px, 1vw, 14px); }
+.udth-overlay[data-size="l"] { --udth-th: clamp(19px, 2vw, 28px); --udth-en: clamp(13px, 1.2vw, 17px); }
 
 .udth-overlay {
   transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .udth-overlay,
-  .udth-line:has(.udth-th, .udth-en) {
+  .udth-overlay {
     transition: none;
-    animation: none;
   }
 }
 
@@ -898,4 +878,143 @@ html.udth-hide-native .ytp-caption-window-container {
   background: color-mix(in srgb, currentColor 12%, transparent);
   color: inherit;
   border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+/* ================= menu v2: short, segmented, advanced collapsed ================= */
+.udth-menu {
+  width: 300px;
+  padding: 0 14px 14px;
+}
+
+.udth-row-label {
+  margin: 10px 2px 6px;
+  color: #8fa0b3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.udth-seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.udth-seg button {
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #b9c4d2;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.udth-seg button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.udth-seg button.udth-seg-on {
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.35);
+}
+
+.udth-seg button:focus-visible,
+.udth-dubrow:focus-visible,
+.udth-adv summary:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+
+.udth-dubrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e8edf3;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.udth-dubrow:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.udth-dubrow-txt {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.udth-dubrow-txt b {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.udth-dubrow-txt small {
+  color: #8fa0b3;
+  font-size: 12px;
+}
+
+.udth-dubrow-on .udth-switch {
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+}
+
+.udth-dubrow-on .udth-switch::after {
+  transform: translateX(16px);
+}
+
+.udth-dubrow-on .udth-dubrow-txt small {
+  color: #5eead4;
+}
+
+.udth-adv {
+  margin-top: 10px;
+}
+
+.udth-adv summary {
+  padding: 8px 4px;
+  color: #a9b6c6;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.udth-adv summary::-webkit-details-marker {
+  display: none;
+}
+
+.udth-adv summary::after {
+  content: " ▾";
+  color: #5eead4;
+}
+
+.udth-adv[open] summary::after {
+  content: " ▴";
+}
+
+.udth-adv .udth-card {
+  margin: 4px 0 0;
+}
+
+.udth-menu-actions {
+  margin-top: 6px;
 }

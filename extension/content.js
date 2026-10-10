@@ -32,6 +32,7 @@
     status: "idle",
     enabled: true,
     dualMode: true,
+    capSize: "m",
     overlay: null,
     line: null,
     video: null,
@@ -280,14 +281,21 @@
     if (state.dualMode && cue.en) {
       const en = document.createElement("div");
       en.className = "udth-en";
-      en.textContent = cue.en;
+      const enSpan = document.createElement("span");
+      enSpan.textContent = cue.en;
+      en.appendChild(enSpan);
       state.line.appendChild(en);
     }
     const th = document.createElement("div");
     th.className = "udth-th";
-    th.textContent = cue.th || cue.en || "";
     th.lang = "th";
+    // The background sits on an inline span, so it hugs each wrapped line
+    // instead of filling a rectangle across the picture.
+    const span = document.createElement("span");
+    span.textContent = cue.th || cue.en || "";
+    th.appendChild(span);
     state.line.appendChild(th);
+    if (state.overlay) state.overlay.dataset.size = state.capSize;
     placeOverlay();
   }
 
@@ -417,29 +425,30 @@
       '<div class="udth-menu-titles"><div class="udth-menu-title">ฮองเรียน</div>' +
       '<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>ไทย</div></div>' +
       `<span class="udth-ver">v${version}</span></div>` +
-      '<div class="udth-tiles">' +
-      '<button type="button" class="udth-chip udth-tile" data-udth="subs" aria-pressed="false">' +
-      '<span class="udth-tile-ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3.500" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 11h4M7 14.500h8M14 11h3" stroke="currentColor" stroke-width="1.800" stroke-linecap="round"/></svg></span>' +
-      '<span class="udth-tile-txt"><b>ซับไทย</b><small data-state="subs">ปิด</small></span></button>' +
-      '<button type="button" class="udth-chip udth-tile" data-udth="dub" aria-pressed="false">' +
-      '<span class="udth-tile-ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 10v4h3.500l4.500 3.500v-11L7.500 10H4z" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linejoin="round"/><path d="M15.500 9.200c1.300 1.600 1.300 4 0 5.600M18 6.800c2.400 3 2.400 7.400 0 10.400" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round"/></svg></span>' +
-      '<span class="udth-tile-txt"><b>พากย์เสียง</b><small data-state="dub">ปิด</small></span></button>' +
-      "</div>" +
-      '<div class="udth-section">เสียง</div>' +
+      '<div class="udth-row-label">ซับบนวิดีโอ</div>' +
+      '<div class="udth-seg" role="group" aria-label="ซับบนวิดีโอ">' +
+      '<button type="button" data-udth="mode" data-val="off">ปิด</button>' +
+      '<button type="button" data-udth="mode" data-val="th">ไทย</button>' +
+      '<button type="button" data-udth="mode" data-val="both">ไทย + EN</button></div>' +
+      '<div class="udth-row-label">ขนาดตัวอักษร</div>' +
+      '<div class="udth-seg" role="group" aria-label="ขนาดตัวอักษร">' +
+      '<button type="button" data-udth="size" data-val="s">เล็ก</button>' +
+      '<button type="button" data-udth="size" data-val="m">กลาง</button>' +
+      '<button type="button" data-udth="size" data-val="l">ใหญ่</button></div>' +
+      '<button type="button" class="udth-dubrow" data-udth="dub" aria-pressed="false">' +
+      '<span class="udth-dubrow-txt"><b>พากย์เสียงไทย</b><small data-state="dub">ปิด</small></span>' +
+      '<span class="udth-switch" aria-hidden="true"></span></button>' +
+      '<details class="udth-adv"><summary>ตั้งค่าเสียงขั้นสูง</summary>' +
       '<div class="udth-card">' +
       '<label class="udth-field"><span>เครื่องมือเสียง</span><select data-udth="engine"></select></label>' +
       '<label class="udth-field"><span>เลือกเสียง</span><select data-udth="voice"></select></label>' +
-      "</div>" +
-      '<div class="udth-section">ระดับเสียง</div>' +
-      '<div class="udth-card">' +
       '<label class="udth-field"><span>เสียงพากย์</span>' +
       '<input type="range" min="0" max="1" step="0.05" data-udth="dubVol"><output data-udth="dubVolOut"></output></label>' +
       '<label class="udth-field"><span>เสียงต้นฉบับ</span>' +
       '<input type="range" min="0" max="1" step="0.05" data-udth="srcVol"><output data-udth="srcVolOut"></output></label>' +
       '<label class="udth-field"><span>เร่งเสียงได้สูงสุด</span>' +
       '<input type="range" min="1" max="2" step="0.05" data-udth="rate"><output data-udth="rateOut"></output></label>' +
-      "</div>" +
-      '<label class="udth-check"><input type="checkbox" data-udth="dual"><span class="udth-switch" aria-hidden="true"></span><span>แสดงอังกฤษกำกับใต้ซับไทย</span></label>' +
+      "</div></details>" +
       '<div class="udth-menu-actions">' +
       '<button type="button" class="udth-btn" data-udth="retry">↻ แปลใหม่</button>' +
       '<button type="button" class="udth-btn udth-btn-primary" data-udth="section">แปลทั้ง Section</button>' +
@@ -605,6 +614,7 @@
       await chrome.storage.local.set({
         enabled: state.enabled,
         dualMode: state.dualMode,
+        capSize: state.capSize,
         dubbingEnabled: state.dubbingEnabled,
         ttsEngine: state.ttsEngine,
         ttsVoice: state.ttsVoice,
@@ -628,7 +638,14 @@
       event.preventDefault();
 
       const action = button.dataset.udth;
-      if (action === "subs") commitOptions({ enabled: !state.enabled });
+      const val = button.dataset.val;
+      if (action === "mode") {
+        commitOptions(
+          val === "off"
+            ? { enabled: false }
+            : { enabled: true, dualMode: val === "both" }
+        );
+      } else if (action === "size") commitOptions({ capSize: val });
       else if (action === "dub") commitOptions({ dubbingEnabled: !state.dubbingEnabled });
       else if (action === "settings") {
         panel.open = !panel.open;
@@ -655,8 +672,6 @@
         commitOptions({ ttsEngine: engine, ttsVoice: panelEl("voice").value || "" });
       } else if (key === "voice") {
         commitOptions({ ttsVoice: event.target.value });
-      } else if (key === "dual") {
-        commitOptions({ dualMode: event.target.checked });
       }
     });
 
@@ -692,14 +707,22 @@
     const el = ensurePanel();
     if (!el) return;
 
-    const subs = el.querySelector('[data-udth="subs"]');
+    const mode = !state.enabled ? "off" : state.dualMode ? "both" : "th";
+    for (const b of el.querySelectorAll('[data-udth="mode"]')) {
+      const on = b.dataset.val === mode;
+      b.classList.toggle("udth-seg-on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    for (const b of el.querySelectorAll('[data-udth="size"]')) {
+      const on = b.dataset.val === state.capSize;
+      b.classList.toggle("udth-seg-on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
     const dub = el.querySelector('[data-udth="dub"]');
-    subs.classList.toggle("udth-chip-on", state.enabled);
-    panel.el.querySelector('[data-state="subs"]').textContent = state.enabled ? "เปิดอยู่" : "ปิด";
-    subs.setAttribute("aria-pressed", String(state.enabled));
-    dub.classList.toggle("udth-chip-on", state.dubbingEnabled);
-    panel.el.querySelector('[data-state="dub"]').textContent = state.dubbingEnabled ? "เปิดอยู่" : "ปิด";
+    dub.classList.toggle("udth-dubrow-on", state.dubbingEnabled);
+    el.querySelector('[data-state="dub"]').textContent = state.dubbingEnabled ? "เปิดอยู่" : "ปิด";
     dub.setAttribute("aria-pressed", String(state.dubbingEnabled));
+    if (state.overlay) state.overlay.dataset.size = state.capSize;
 
     // The button carries the state, so what is on is readable without opening
     // anything — the same job the player's own CC button does.
@@ -722,7 +745,6 @@
     panelEl("srcVolOut").value = `${Math.round(state.originalAudioVolume * 100)}%`;
     panelEl("rate").value = String(state.dubRateCap);
     panelEl("rateOut").value = `${state.dubRateCap.toFixed(2)}x`;
-    panelEl("dual").checked = state.dualMode;
     panelEl("section").hidden = !site.supportsSection;
   }
 
@@ -1396,7 +1418,7 @@
   // using the English punctuation, and each sentence stays up for as long as it
   // is being spoken. Long sentences are split at a fragment boundary, never in
   // the middle of one, so no word is ever cut.
-  const VIEW_MAX_TH_CHARS = 140; // only applies mid-sentence; about three lines of Thai
+  const VIEW_MAX_TH_CHARS = 96; // only applies mid-sentence; two lines of Thai at the caption width
   const VIEW_MAX_SECONDS = 12;
   const VIEW_BRIDGE_GAP = 0.6; // keep a sentence up across a tiny pause: no flicker
   const view = { src: null, len: -1, cues: [] };
@@ -2489,10 +2511,11 @@
   });
 
   chrome.storage.local
-    .get(["enabled", "dualMode", "dubbingEnabled", "ttsEngine", "dubbingVolume", "originalAudioVolume", "ttsVoice", "dubRateCap"])
+    .get(["enabled", "dualMode", "capSize", "dubbingEnabled", "ttsEngine", "dubbingVolume", "originalAudioVolume", "ttsVoice", "dubRateCap"])
     .then((stored) => {
       if (typeof stored.enabled === "boolean") state.enabled = stored.enabled;
       if (typeof stored.dualMode === "boolean") state.dualMode = stored.dualMode;
+      if (["s", "m", "l"].includes(stored.capSize)) state.capSize = stored.capSize;
       if (typeof stored.dubbingEnabled === "boolean") state.dubbingEnabled = stored.dubbingEnabled;
       if (typeof stored.ttsEngine === "string" && stored.ttsEngine) {
         state.ttsEngine = stored.ttsEngine;
