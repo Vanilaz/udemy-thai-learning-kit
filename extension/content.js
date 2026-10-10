@@ -281,9 +281,7 @@
     if (state.dualMode && cue.en) {
       const en = document.createElement("div");
       en.className = "udth-en";
-      const enSpan = document.createElement("span");
-      enSpan.textContent = cue.en;
-      en.appendChild(enSpan);
+      en.textContent = cue.en;
       state.line.appendChild(en);
     }
     const th = document.createElement("div");
@@ -292,7 +290,16 @@
     // The background sits on an inline span, so it hugs each wrapped line
     // instead of filling a rectangle across the picture.
     const span = document.createElement("span");
-    span.textContent = cue.th || cue.en || "";
+    const text = cue.th || cue.en || "";
+    // One nowrap span per word, a zero-width space between them as the only
+    // place the browser may break.
+    thaiWords(text).forEach((word, i) => {
+      if (i) span.appendChild(document.createTextNode("\u200b"));
+      const w = document.createElement("span");
+      w.className = "udth-w";
+      w.textContent = word;
+      span.appendChild(w);
+    });
     th.appendChild(span);
     state.line.appendChild(th);
     if (state.overlay) state.overlay.dataset.size = state.capSize;
@@ -1418,29 +1425,62 @@
   // using the English punctuation, and each sentence stays up for as long as it
   // is being spoken. Long sentences are split at a fragment boundary, never in
   // the middle of one, so no word is ever cut.
-  const VIEW_MAX_TH_CHARS = 96; // only applies mid-sentence; two lines of Thai at the caption width
-  const VIEW_MAX_SECONDS = 12;
-  const VIEW_BRIDGE_GAP = 0.6; // keep a sentence up across a tiny pause: no flicker
+  // Captions are built in two steps. First fragments are merged back into whole
+  // sentences, however long. Then each sentence is cut into display chunks at
+  // *word* boundaries so no chunk is more than two lines, with the sentence's
+  // time shared out by how much text each chunk holds. Cutting by cue instead
+  // (the old way) left chunks that stopped mid-clause ("...เทียบกับค่าใน").
+  const VIEW_CHUNK_CHARS = 58; // two lines of Thai at the caption width
+  const VIEW_MAX_SENTENCE_SECONDS = 16;
+  const VIEW_BRIDGE_GAP = 0.6; // keep a caption up across a tiny pause: no flicker
   const view = { src: null, len: -1, cues: [] };
 
+  const segmenter =
+    typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter("th", { granularity: "word" }) : null;
+
+  // Thai has no spaces between words. The browser's own line breaking split
+  // words in half ("ตรวจ" / "สอบ"), so words are found here and each one is
+  // kept whole when drawn.
+  function thaiWords(text) {
+    if (!segmenter) return text.split(/(\s+)/).filter(Boolean);
+    return [...segmenter.segment(text)].map((p) => p.segment);
+  }
+
+  function splitEvenly(words, maxChars) {
+    const total = words.reduce((n, w) => n + w.length, 0);
+    if (total <= maxChars) return [words];
+    const parts = Math.ceil(total / maxChars);
+    const target = total / parts;
+    const chunks = [];
+    let cur = [];
+    let curLen = 0;
+    for (const w of words) {
+      cur.push(w);
+      curLen += w.length;
+      // Prefer to break right after a space or a closing bracket.
+      const soft = /\s$|[)\]]$/.test(w);
+      if (chunks.length < parts - 1 && (curLen >= target * 1.05 || (soft && curLen >= target * 0.85))) {
+        chunks.push(cur);
+        cur = [];
+        curLen = 0;
+      }
+    }
+    if (cur.length) chunks.push(cur);
+    return chunks;
+  }
+
   function buildViewCues(cues) {
-    const out = [];
+    const sentences = [];
     let cur = null;
     const flush = () => {
-      if (cur) out.push(cur);
+      if (cur) sentences.push(cur);
       cur = null;
     };
     for (const cue of cues) {
       const th = (cue.th || "").trim();
       const en = (cue.en || "").trim();
       if (!th && !en) continue;
-      if (cur) {
-        const nextLen = (cur.th + " " + th).length;
-        const tooLong = nextLen > VIEW_MAX_TH_CHARS && cur.th.length >= 24;
-        const gap = cue.start - cur.end > 1.2;
-        const tooOld = cue.end - cur.start > VIEW_MAX_SECONDS;
-        if (tooLong || gap || tooOld) flush();
-      }
+      if (cur && (cue.start - cur.end > 1.2 || cue.end - cur.start > VIEW_MAX_SENTENCE_SECONDS)) flush();
       if (cur) {
         cur.th = (cur.th + " " + th).trim();
         cur.en = (cur.en + " " + en).trim();
@@ -1448,10 +1488,34 @@
       } else {
         cur = { start: cue.start, end: cue.end, th, en };
       }
-      if (endsSentence(en) && cur.th.length >= 12) flush();
+      if (endsSentence(en) && cur.th.length >= 8) flush();
     }
     flush();
-    // Hold each sentence through a short pause rather than blanking the screen.
+
+    const out = [];
+    for (const sentence of sentences) {
+      const chunks = splitEvenly(thaiWords(sentence.th), VIEW_CHUNK_CHARS);
+      const enWords = sentence.en.split(/\s+/).filter(Boolean);
+      const total = chunks.reduce((n, c) => n + c.join("").length, 0) || 1;
+      const span = sentence.end - sentence.start;
+      let at = sentence.start;
+      let enAt = 0;
+      chunks.forEach((chunk, i) => {
+        const len = chunk.join("").length;
+        const dur = (span * len) / total;
+        const last = i === chunks.length - 1;
+        const enTake = last ? enWords.length - enAt : Math.round((enWords.length * len) / total);
+        out.push({
+          start: at,
+          end: last ? sentence.end : at + dur,
+          th: chunk.join("").trim(),
+          en: enWords.slice(enAt, enAt + enTake).join(" "),
+        });
+        at += dur;
+        enAt += enTake;
+      });
+    }
+    // Hold each caption through a short pause rather than blanking the screen.
     out.forEach((c, n) => {
       const next = out[n + 1];
       if (next && next.start - c.end <= VIEW_BRIDGE_GAP) c.end = next.start;

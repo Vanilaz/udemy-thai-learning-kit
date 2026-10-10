@@ -32,60 +32,65 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  max-width: min(100%, 700px);
+  gap: 0;
+  max-width: min(100%, 780px);
   text-align: center;
 }
 
-/* No card. Each wrapped line gets its own snug dark strip (an inline span with
-   box-decoration-break: clone), so the picture stays visible around and between
-   the words. The Thai is large and white; English is a small second row. */
-.udth-th,
-.udth-en {
+.udth-line:has(.udth-th, .udth-en) {
+  position: relative;
+  padding: 8px 18px 10px;
+  border-radius: 12px;
+  background: rgba(12, 12, 18, 0.82);
+  backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.udth-line:has(.udth-th, .udth-en)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #0ea5e9, #14b8a6);
+}
+
+.udth-en,
+.udth-th {
   display: block;
+  max-width: 100%;
   margin: 0;
   padding: 0;
-  max-width: 100%;
+  color: #fff;
   font-family: "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
   text-wrap: balance;
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
 }
 
-.udth-th span,
-.udth-en span {
-  padding: 1px 10px 3px;
-  border-radius: 6px;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.udth-th span {
-  background: rgba(0, 0, 0, 0.66);
-  color: #fff;
+.udth-th {
   font-size: var(--udth-th, 20px);
-  font-weight: 600;
-  line-height: 1.75;
-  word-break: normal;
-  line-break: strict;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  font-weight: 500;
+  line-height: 1.6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 .udth-en {
   order: 2;
-}
-
-.udth-en span {
-  background: rgba(0, 0, 0, 0.5);
-  color: #d6dbe6;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   font-size: var(--udth-en, 14px);
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.45;
+  color: #aeb4c4;
 }
 
-.udth-overlay[data-size="s"] { --udth-th: clamp(14px, 1.25vw, 18px); --udth-en: clamp(11px, 0.9vw, 13px); }
-.udth-overlay[data-size="m"], .udth-overlay:not([data-size]) { --udth-th: clamp(16px, 1.6vw, 22px); --udth-en: clamp(12px, 1vw, 14px); }
-.udth-overlay[data-size="l"] { --udth-th: clamp(19px, 2vw, 28px); --udth-en: clamp(13px, 1.2vw, 17px); }
+.udth-overlay[data-size="s"] { --udth-th: clamp(15px, 1.4vw, 19px); --udth-en: clamp(11.5px, 0.9vw, 13px); }
+.udth-overlay[data-size="m"], .udth-overlay:not([data-size]) { --udth-th: clamp(17px, 1.7vw, 23px); --udth-en: clamp(12.5px, 1.1vw, 15px); }
+.udth-overlay[data-size="l"] { --udth-th: clamp(20px, 2.1vw, 29px); --udth-en: clamp(14px, 1.3vw, 18px); }
 
 .udth-overlay {
   transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);

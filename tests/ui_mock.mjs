@@ -19,7 +19,7 @@ body{margin:0;background:#111;font-family:Arial}
 .nat{width:40px;height:40px;border:0;background:transparent;color:#fff;font-size:20px;cursor:pointer;border-radius:8px}.nat:hover{background:#fff2}
 </style>
 <div id=player><video></video><pre id=code>switch(x) {\\n  case 'value1':\\n    ....\\n    [break]\\n  default:\\n    ....\\n}</pre><div id=scrub></div>
-<div id=bar data-purpose="video-control-bar"><button class=nat>▶</button><span class=sp></span>
+<div id=bar data-purpose="video-control-bar"><button class=nat>▶</button><span class=sp></
 <div><button class=nat data-purpose="transcript-toggle">📄</button></div>
 <div><button class=nat data-purpose="captions-dropdown-button" aria-label="Captions">CC</button></div>
 <div><button class=nat data-purpose="settings-button" aria-label="Settings">⚙</button></div>
@@ -45,7 +45,7 @@ for(const k of ['dubVol','srcVol','rate'])el.querySelector('[data-udth='+k+']').
 el.querySelector('[data-udth=dubVolOut]').value='100%';el.querySelector('[data-udth=srcVolOut]').value='15%';el.querySelector('[data-udth=rateOut]').value='1.60x';
 el.querySelector('[data-udth=engine]').innerHTML='<option>Google Chirp 3 HD</option>';el.querySelector('[data-udth=voice]').innerHTML='<option>Gacrux — หญิง</option>';
 const o=document.createElement('div');o.className='udth-overlay';o.dataset.size='m';const l=document.createElement('div');l.className='udth-line';o.appendChild(l);host.appendChild(o);state.overlay=o;state.line=l;
-l.innerHTML='<div class="udth-en">Hey guys what\\'s up, I welcome you to another tutorial on this section where we are covering</div><div class="udth-th" lang="th"><span>สวัสดีครับทุกคน ยินดีต้อนรับสู่ Tutorial (บทเรียนแนะนำทีละขั้นตอน) อีกตอนในหมวดนี้ที่เรากำลังเรียน</span></div>';
+l.innerHTML='<div class="udth-en">Hey guys what\\'s up, I welcome you to another tutorial on this section where we are covering</div><div class="udth-th" lang="th"><สวัสดีครับทุกคน ยินดีต้อนรับสู่ Tutorial (บทเรียนแนะนำทีละขั้นตอน) อีกตอนในหมวดนี้ที่เรากำลังเรียน</</div>';
 window.docked=dockButton(button);button.classList.add('udth-pill-on');
 host.addEventListener('mousemove',onPointerActivity);
 window.openMenu=()=>{panel.open=true;el.hidden=false;placeOverlay()};
