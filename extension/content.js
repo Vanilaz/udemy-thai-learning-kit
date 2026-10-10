@@ -206,6 +206,13 @@
       // Never push the text past the middle of a very small player.
       lift = Math.min(lift, boxRect.height * 0.45);
       overlay.style.bottom = `${Math.round(lift)}px`;
+      if (panel.el) {
+        const menuBottom = Math.round(Math.max(64, lift - 8));
+        panel.el.style.bottom = `${menuBottom}px`;
+        // Never taller than the room above the bar, so it scrolls inside
+        // itself instead of running off the top of a short player.
+        panel.el.style.maxHeight = `${Math.max(160, Math.round(boxRect.height - menuBottom - 12))}px`;
+      }
     });
   }
 
@@ -340,7 +347,14 @@
     button.dataset.udth = "settings";
     button.setAttribute("aria-label", "ซับไทยและเสียงพากย์");
     button.title = "ซับไทยและเสียงพากย์";
-    button.textContent = "ไทย";
+    // A glyph in the same family as the player's own icons (ก → A), not a word
+    // floating on its own. The state dot says whether anything is switched on.
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' +
+      '<path fill="currentColor" d="M4 5h9v2H4zM7 7h2c0 2.2-1 4.2-3 5.4l-1-1.6C6.4 9.8 7 8.7 7 7z' +
+      'M9 11l-1.2 1.6c1 .7 2.2 1.3 3.7 1.7l.5-1.9c-1-.2-2-.8-3-1.4zM14 10h2l4 10h-2.1l-.9-2.4h-4' +
+      'l-.9 2.4H10.100zM15.700 12.300L14.600 15.600h2.200z"/></svg>' +
+      '<i class="udth-dot" aria-hidden="true"></i>';
 
     // Parked in the corner to begin with; dockButton moves it into the real
     // control bar as soon as one exists. Udemy builds its bar well after the
@@ -353,29 +367,27 @@
     el.className = "udth-menu";
     el.hidden = true;
     el.innerHTML =
-      '<div class="udth-menu-head"><span data-udth="src">EN</span> ' +
-      '<span class="udth-menu-arrow">→</span> ไทย</div>' +
-      '<div class="udth-menu-row">' +
-      '<button type="button" class="udth-chip" data-udth="subs">ซับไทย</button>' +
-      '<button type="button" class="udth-chip" data-udth="dub">พากย์เสียง</button>' +
+      '<div class="udth-menu-head"><div class="udth-menu-title">ซับไทย & เสียงพากย์</div>' +
+      '<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>ไทย</div></div>' +
+      '<div class="udth-tiles">' +
+      '<button type="button" class="udth-chip udth-tile" data-udth="subs">ซับไทย</button>' +
+      '<button type="button" class="udth-chip udth-tile" data-udth="dub">พากย์เสียง</button>' +
       "</div>" +
-      '<label class="udth-field"><span>เครื่องมือเสียง</span>' +
-      '<select data-udth="engine"></select></label>' +
-      '<label class="udth-field"><span>เลือกเสียง</span>' +
-      '<select data-udth="voice"></select></label>' +
+      '<div class="udth-card">' +
+      '<label class="udth-field"><span>เครื่องมือเสียง</span><select data-udth="engine"></select></label>' +
+      '<label class="udth-field"><span>เลือกเสียง</span><select data-udth="voice"></select></label>' +
+      "</div>" +
+      '<div class="udth-card">' +
       '<label class="udth-field"><span>ความดังเสียงพากย์</span>' +
-      '<input type="range" min="0" max="1" step="0.05" data-udth="dubVol">' +
-      '<output data-udth="dubVolOut"></output></label>' +
+      '<input type="range" min="0" max="1" step="0.05" data-udth="dubVol"><output data-udth="dubVolOut"></output></label>' +
       '<label class="udth-field"><span>ความดังเสียงต้นฉบับ</span>' +
-      '<input type="range" min="0" max="1" step="0.05" data-udth="srcVol">' +
-      '<output data-udth="srcVolOut"></output></label>' +
+      '<input type="range" min="0" max="1" step="0.05" data-udth="srcVol"><output data-udth="srcVolOut"></output></label>' +
       '<label class="udth-field"><span>เร่งเสียงได้สูงสุด</span>' +
-      '<input type="range" min="1" max="2" step="0.05" data-udth="rate">' +
-      '<output data-udth="rateOut"></output></label>' +
-      '<label class="udth-check"><input type="checkbox" data-udth="dual">' +
-      "<span>แสดงอังกฤษกำกับใต้ซับไทย</span></label>" +
+      '<input type="range" min="1" max="2" step="0.05" data-udth="rate"><output data-udth="rateOut"></output></label>' +
+      "</div>" +
+      '<label class="udth-check"><input type="checkbox" data-udth="dual"><span>แสดงอังกฤษกำกับใต้ซับไทย</span></label>' +
       '<div class="udth-menu-actions">' +
-      '<button type="button" class="udth-chip" data-udth="retry">แปลใหม่</button>' +
+      '<button type="button" class="udth-chip" data-udth="retry">↻ แปลใหม่</button>' +
       '<button type="button" class="udth-chip" data-udth="section">แปลทั้ง Section</button>' +
       "</div>" +
       '<div class="udth-panel-note"></div>';
@@ -395,16 +407,50 @@
   // docking it are therefore separate events, and docking has to keep being
   // retried. Leaving it parked in the corner forever was the bug.
   function dockButton(button) {
+    // Already sitting in a real control row: nothing to do.
+    if (button.isConnected && !button.classList.contains("udth-pill-floating")) return true;
+
+    // Find a native tool button (settings / captions / fullscreen) and sit
+    // right before it. Whatever the site calls its classes, an icon button
+    // that is a *sibling* of the native ones is where a toolbar item belongs,
+    // and copying the native class gives it the same size and hover state.
+    const root = (() => {
+      let el = state.video;
+      for (let i = 0; i < 8 && el && el.parentElement; i += 1) el = el.parentElement;
+      return el || document;
+    })();
+    const anchors = [
+      '[data-purpose*="settings"]',
+      '[data-purpose*="captions"]',
+      '[data-purpose*="fullscreen"]',
+      'button[aria-label*="etting" i]',
+      'button[aria-label*="aption" i]',
+      'button[aria-label*="ull" i]',
+      ".ytp-settings-button",
+    ];
+    for (const selector of anchors) {
+      const found = root.querySelector(selector);
+      if (!found) continue;
+      let native = found.closest("button") || found;
+      // Step up while the native control is the only child of its wrapper, so
+      // we end up next to its peers rather than inside someone's box.
+      while (native.parentElement && native.parentElement.children.length < 2) {
+        native = native.parentElement;
+      }
+      const bar = native.parentElement;
+      if (!bar || bar === document.body || bar.contains(state.video)) continue;
+      bar.insertBefore(button, native);
+      button.classList.remove("udth-pill-floating");
+      button.classList.add("udth-tool");
+      log("วางปุ่มไว้ข้างเครื่องมือของเพลเยอร์:", selector);
+      return true;
+    }
+
     const bar = site.controlBar();
     if (!bar) return false;
-    if (button.parentElement === bar) return true;
-
     bar.insertBefore(button, bar.firstChild);
     button.classList.remove("udth-pill-floating");
-    log(
-      "วางปุ่มไว้ในแถบควบคุมแล้ว:",
-      bar.getAttribute("data-purpose") || bar.className || bar.tagName
-    );
+    button.classList.add("udth-tool");
     return true;
   }
 
@@ -585,9 +631,9 @@
     const subs = el.querySelector('[data-udth="subs"]');
     const dub = el.querySelector('[data-udth="dub"]');
     subs.classList.toggle("udth-chip-on", state.enabled);
-    subs.textContent = state.enabled ? "ซับไทย: เปิด" : "ซับไทย: ปิด";
+    subs.textContent = state.enabled ? "ซับไทย · เปิด" : "ซับไทย · ปิด";
     dub.classList.toggle("udth-chip-on", state.dubbingEnabled);
-    dub.textContent = state.dubbingEnabled ? "พากย์เสียง: เปิด" : "พากย์เสียง: ปิด";
+    dub.textContent = state.dubbingEnabled ? "พากย์เสียง · เปิด" : "พากย์เสียง · ปิด";
 
     // The button carries the state, so what is on is readable without opening
     // anything — the same job the player's own CC button does.
