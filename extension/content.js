@@ -1899,7 +1899,7 @@
 
     let translated;
     try {
-      translated = await waitTranslation(payload, (cues) => {
+      translated = await requestTranslation(payload, (cues) => {
         const p = Math.round((cues.length / blocks.length) * 100);
         setQuizBanner(banner, `กำลังแปลคำสั่ง Assignment ... ${p}%`);
       });
