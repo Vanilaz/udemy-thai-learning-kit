@@ -1383,7 +1383,7 @@
     name: "udemy",
     supportsSection: true,
 
-    pageKey: () => lectureId() || quizId() || assignmentId(),
+    pageKey: () => lectureId() || quizId() || (assignmentId() ? assignmentId() + location.pathname : null),
     cacheScope: courseSlug,
     cacheId: () => lectureId() || (quizId() ? `quiz-${quizId()}` : (assignmentId() ? `assignment-${assignmentId()}` : null)),
     title: lessonTitle,
