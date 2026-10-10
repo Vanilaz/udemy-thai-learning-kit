@@ -1871,7 +1871,14 @@
   async function startAssignment(id) {
     let container = null;
     for (let i = 0; i < 40; i++) {
-      container = document.querySelector('[class*="assignment-instructions--"], [class*="assignment--content"], [class*="tabs--content"]');
+            // The wrapper classes change depending on whether we are on the "Instructions" tab,
+      // the "Submission" tab, or the general overview.
+      container =
+        document.querySelector('[class*="assignment-instructions--"]') ||
+        document.querySelector('[class*="assignment--content"]') ||
+        document.querySelector('[class*="practice--mt-xxx1"]') ||
+        document.querySelector('[class*="question--title-text"]') ||
+        document.querySelector('[data-purpose="curriculum-item-viewer-content"]');
       if (container) break;
       await sleep(500);
     }
