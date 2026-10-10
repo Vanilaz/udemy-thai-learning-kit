@@ -1853,19 +1853,26 @@
     while ((node = walk.nextNode())) {
       const text = node.nodeValue.replace(/\s+/g, " ").trim();
       if (!text || text.length < 2) continue;
-      // Skip numbers at the start of a list item or pure numbers
       if (/^[\d\.]*$/.test(text)) continue;
       
       const el = node.parentElement;
       if (!el) continue;
       if (el.tagName === "CODE" || el.tagName === "PRE" || el.closest("pre")) continue;
       if (el.classList.contains("udth-assignment-th")) continue;
-      // Exclude Udemy's own UI text that might bleed in
       if (el.closest('button') || el.closest('[class*="progress-bar"]') || el.closest('[class*="banner"]')) continue;
       
-      blocks.push(el);
+      blocks.push({ el, text });
     }
-    return [...new Set(blocks)];
+    // Deduplicate elements while remembering the text we found
+    const unique = [];
+    const seen = new Set();
+    for (const b of blocks) {
+      if (!seen.has(b.el)) {
+        seen.add(b.el);
+        unique.push(b);
+      }
+    }
+    return unique;
   }
 
   async function startAssignment(id) {
@@ -1893,7 +1900,7 @@
       course: courseSlug(),
       lecture: `assignment-${id}`,
       title: lessonTitle(),
-      cues: blocks.map((el, n) => { return { start: n, end: n + 1, text: (el.textContent || "").replace(/\s+/g, " ").trim() }; }),
+      cues: blocks.map((b, n) => { return { start: n, end: n + 1, text: b.text }; }),
       mode: "doc",
     };
 
@@ -1928,9 +1935,10 @@
 
   function injectAssignmentTranslations(container) {
     if (!state.quizMap || !state.enabled) return;
-    collectAssignmentBlocks(container).forEach((el) => {
+    collectAssignmentBlocks(container).forEach((b) => {
+      const el = b.el;
       if (el.nextElementSibling && el.nextElementSibling.classList.contains("udth-assignment-th")) return;
-      const thai = state.quizMap.get(normalizeText(el.textContent));
+      const thai = state.quizMap.get(normalizeText(b.text));
       if (!thai) return;
       const line = document.createElement("div");
       line.className = "udth-assignment-th";
@@ -1940,6 +1948,8 @@
       line.style.color = "#c084fc";
       line.style.opacity = "0.95";
       line.style.lineHeight = "1.6";
+      // Ensure we stay block-level so we don't flow inline with the next phrase
+      line.style.display = "block";
       if (el.nextSibling) el.parentNode.insertBefore(line, el.nextSibling);
       else el.parentNode.appendChild(line);
     });
