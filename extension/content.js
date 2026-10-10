@@ -800,23 +800,23 @@
 
   // Pausing once is not enough: Udemy's own player, and the user, can both
   // start playback again while we are still waiting.
-  function showGate(title, detail = "") {
+  function showGate(title, detail = "", kind = "info") {
     if (gate.skipped) return;
     const el = ensureGate();
     el.querySelector(".udth-gate-title").textContent = title;
+    el.querySelector(".udth-gate-title").style.color = kind === "error" ? "#fb7185" : "";
     const detailEl = el.querySelector(".udth-gate-detail");
     detailEl.textContent = detail;
     detailEl.style.display = detail ? "" : "none";
+
+    const spinner = el.querySelector(".udth-gate-spinner");
+    if (spinner) spinner.style.display = kind === "error" ? "none" : "";
 
     const video = state.video;
     if (video && gate.video !== video) {
       releaseGateHold();
       gate.video = video;
-      // Remembered before the first pause, so the lecture is handed back in the
-      // state the user left it in rather than always stopped.
       gate.wasPlaying = !video.paused;
-      // Udemy autoplays the next lecture, and the user may press play while
-      // waiting. Either counts as wanting it to run once the gate lifts.
       gate.hold = () => {
         gate.wasPlaying = true;
         video.pause();
@@ -1869,10 +1869,9 @@
   }
 
   async function startAssignment(id) {
+    const generation = state.generation;
     let container = null;
     for (let i = 0; i < 40; i++) {
-            // The wrapper classes change depending on whether we are on the "Instructions" tab,
-      // the "Submission" tab, or the general overview.
       container =
         document.querySelector('[class*="assignment-instructions--"]') ||
         document.querySelector('[class*="assignment--content"]') ||
@@ -1887,35 +1886,43 @@
     const blocks = collectAssignmentBlocks(container);
     if (!blocks.length) return;
 
-    const banner = ensureQuizBanner();
-    setQuizBanner(banner, `กำลังแปลคำสั่ง Assignment ${blocks.length} บรรทัดเป็นไทย ...`);
+    state.status = "translating";
+    showGate(`กำลังแปลคำสั่ง Assignment ${blocks.length} บรรทัดเป็นไทย ...`);
 
     const payload = {
-      course: courseSlug,
+      course: courseSlug(),
       lecture: `assignment-${id}`,
       title: lessonTitle(),
       cues: blocks.map((el, n) => { return { start: n, end: n + 1, text: (el.textContent || "").replace(/\s+/g, " ").trim() }; }),
+      mode: "doc",
     };
 
     let translated;
     try {
-      translated = await requestTranslation(payload, (cues) => {
-        const p = Math.round((cues.length / blocks.length) * 100);
-        setQuizBanner(banner, `กำลังแปลคำสั่ง Assignment ... ${p}%`);
-      });
+      translated = await requestTranslation(
+        { ...payload, force: await takeForceFlag(payload.lecture) },
+        generation,
+        (done, total) => {
+          const suffix = total ? ` (${done}/${total})` : "";
+          showGate(`กำลังแปลคำสั่ง Assignment ...${suffix}`);
+        }
+      );
     } catch (err) {
       if (err instanceof Stale) return;
-      setQuizBanner(banner, describeTranslateError(err), "error");
+      state.status = "error";
+      showGate(describeTranslateError(err), "error");
       return;
     }
 
     state.quizMap = new Map();
-    translated.forEach((cue, n) => {
-      if (cue.th) state.quizMap.set(normalizeText(payload.cues[n].text), cue.th);
+    (translated || []).forEach((cue, n) => {
+      if (cue && cue.th && payload.cues[n]) {
+        state.quizMap.set(normalizeText(payload.cues[n].text), cue.th);
+      }
     });
 
-    setQuizBanner(banner, `แปลแล้ว ${state.quizMap.size} ข้อความ`, "ok");
-    setTimeout(() => { if (banner && banner.isConnected) banner.remove(); }, 4000);
+    state.status = "ready";
+    hideGate();
     watchAssignmentDom(container);
   }
 
