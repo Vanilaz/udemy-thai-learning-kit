@@ -1383,9 +1383,9 @@
     name: "udemy",
     supportsSection: true,
 
-    pageKey: () => lectureId() || quizId(),
+    pageKey: () => lectureId() || quizId() || assignmentId(),
     cacheScope: courseSlug,
-    cacheId: () => lectureId() || (quizId() ? `quiz-${quizId()}` : null),
+    cacheId: () => lectureId() || (quizId() ? `quiz-${quizId()}` : (assignmentId() ? `assignment-${assignmentId()}` : null)),
     title: lessonTitle,
     playerContainer: () => null, // the overlay anchors to the video's parent
 
@@ -1401,9 +1401,11 @@
     },
 
     async describe() {
-      // Quiz pages carry no lecture id, so they must be detected first.
+      // Quiz and Assignment pages carry no lecture id, so they must be detected first.
       const quiz = quizId();
       if (quiz) return { kind: "quiz", payload: quiz };
+      const assignment = assignmentId();
+      if (assignment) return { kind: "assignment", payload: assignment };
 
       const asset = await fetchLectureAsset();
       log("ชนิดบทเรียน", asset.type || "(ไม่ระบุ)");
@@ -1626,11 +1628,13 @@
     gate.skipped = false;
     cleanupArticle();
     cleanupQuiz();
+    cleanupAssignment();
 
     const described = await site.describe();
     if (!described) return; // not a page this site knows how to translate
 
     if (described.kind === "quiz") return startQuiz(described.payload);
+    if (described.kind === "assignment") return startAssignment(described.payload);
     if (described.kind === "article") return startArticle(described.payload);
     return startVideo(described.payload);
   }
@@ -1834,6 +1838,106 @@
   }
 
   // ---------------------------------------------------------------- quiz mode
+
+
+  // ---------------------------------------------------------- assignment mode
+
+  function assignmentId() {
+    return (location.pathname.match(/\/learn\/practice\/(\d+)/) || [])[1] || null;
+  }
+
+  function collectAssignmentBlocks(root) {
+    const blocks = [];
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    while ((node = walk.nextNode())) {
+      const text = node.nodeValue.replace(/\s+/g, " ").trim();
+      if (!text || text.length < 2) continue;
+      const el = node.parentElement;
+      if (el.tagName === "CODE" || el.tagName === "PRE" || el.closest("pre")) continue;
+      if (el.classList.contains("udth-assignment-th")) continue;
+      blocks.push(el);
+    }
+    return [...new Set(blocks)];
+  }
+
+  async function startAssignment(id) {
+    let container = null;
+    for (let i = 0; i < 40; i++) {
+      container = document.querySelector('[class*="assignment-instructions--"]');
+      if (container) break;
+      await sleep(500);
+    }
+    if (!container) return;
+
+    const blocks = collectAssignmentBlocks(container);
+    if (!blocks.length) return;
+
+    const banner = ensureQuizBanner();
+    setQuizBanner(banner, `กำลังแปลคำสั่ง Assignment ${blocks.length} บรรทัดเป็นไทย ...`);
+
+    const payload = {
+      course: courseSlug,
+      lecture: `assignment-${id}`,
+      title: lessonTitle(),
+      cues: blocks.map((el, n) => { return { start: n, end: n + 1, text: (el.textContent || "").replace(/\s+/g, " ").trim() }; }),
+    };
+
+    let translated;
+    try {
+      translated = await waitTranslation(payload, (cues) => {
+        const p = Math.round((cues.length / blocks.length) * 100);
+        setQuizBanner(banner, `กำลังแปลคำสั่ง Assignment ... ${p}%`);
+      });
+    } catch (err) {
+      if (err instanceof Stale) return;
+      setQuizBanner(banner, describeTranslateError(err), "error");
+      return;
+    }
+
+    state.quizMap = new Map();
+    translated.forEach((cue, n) => {
+      if (cue.th) state.quizMap.set(normalizeText(payload.cues[n].text), cue.th);
+    });
+
+    setQuizBanner(banner, `แปลแล้ว ${state.quizMap.size} ข้อความ`, "ok");
+    setTimeout(() => { if (banner && banner.isConnected) banner.remove(); }, 4000);
+    watchAssignmentDom(container);
+  }
+
+  function injectAssignmentTranslations(container) {
+    if (!state.quizMap || !state.enabled) return;
+    collectAssignmentBlocks(container).forEach((el) => {
+      if (el.nextElementSibling && el.nextElementSibling.classList.contains("udth-assignment-th")) return;
+      const thai = state.quizMap.get(normalizeText(el.textContent));
+      if (!thai) return;
+      const line = document.createElement("div");
+      line.className = "udth-assignment-th";
+      line.textContent = thai;
+      line.style.fontSize = "0.95em";
+      line.style.marginTop = "2px";
+      line.style.color = "#c084fc";
+      line.style.opacity = "0.95";
+      line.style.lineHeight = "1.6";
+      if (el.nextSibling) el.parentNode.insertBefore(line, el.nextSibling);
+      else el.parentNode.appendChild(line);
+    });
+  }
+
+  function watchAssignmentDom(container) {
+    injectAssignmentTranslations(container);
+    if (state.assignmentObserver) state.assignmentObserver.disconnect();
+    state.assignmentObserver = new MutationObserver(() => injectAssignmentTranslations(container));
+    state.assignmentObserver.observe(container, { childList: true, subtree: true });
+  }
+
+  function cleanupAssignment() {
+    if (state.assignmentObserver) {
+      state.assignmentObserver.disconnect();
+      state.assignmentObserver = null;
+    }
+    document.querySelectorAll(".udth-assignment-th").forEach((el) => el.remove());
+  }
 
   function quizId() {
     return (location.pathname.match(/\/learn\/quiz\/(\d+)/) || [])[1] || null;
