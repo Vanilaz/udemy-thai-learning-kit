@@ -267,3 +267,8 @@ sectionEl.addEventListener("click", async () => {
 refresh();
 refreshQueue();
 setInterval(refreshQueue, 2000);
+
+(() => {
+  const el = document.querySelector(".version");
+  if (el) el.textContent = `v${chrome.runtime.getManifest().version}`;
+})();

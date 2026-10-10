@@ -33,47 +33,86 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  max-width: min(100%, 1100px);
+  gap: 0;
+  max-width: min(100%, 980px);
   text-align: center;
 }
 
-/* One font stack for both lines. Without it the lines inherited whatever the
-   host page used, which on Udemy has no Thai glyphs, so the browser fell back
-   per-character and the Thai looked uneven. */
+/* One caption card, not two stacked boxes: Thai on top, the English reference
+   as a quiet second row under a hairline, an accent edge on the left. Only a
+   line that actually holds subtitle text becomes the card, so status badges
+   keep their own look. */
+.udth-line:has(.udth-th, .udth-en) {
+  position: relative;
+  padding: 9px 20px 10px 22px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(20, 18, 36, 0.86), rgba(9, 9, 18, 0.9));
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  animation: udth-cue-in 140ms ease-out;
+}
+
+.udth-line:has(.udth-th, .udth-en)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #7c6cff, #c084fc);
+}
+
+@keyframes udth-cue-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(4px);
+  }
+}
+
 .udth-en,
 .udth-th {
-  display: inline-block;
+  display: block;
   max-width: 100%;
-  padding: 4px 14px 6px;
-  border-radius: 12px;
+  margin: 0;
+  padding: 0;
+  background: none;
   color: #fff;
   font-family: "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
-  line-height: 1.6; /* Thai tone marks stack above the line */
   text-wrap: balance;
   overflow-wrap: break-word;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Thai is the line you read: larger, bolder, on a deeper glass card with a
-   thin violet edge. English is the quiet reference above it. */
 .udth-th {
-  font-size: clamp(16px, 1.8vw, 24px);
+  font-size: clamp(17px, 1.9vw, 26px);
   font-weight: 600;
-  background: rgba(10, 10, 20, 0.82);
-  backdrop-filter: blur(8px) saturate(140%);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(167, 139, 250, 0.28);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  line-height: 1.65; /* Thai tone marks stack above the line */
+  letter-spacing: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .udth-en {
-  font-size: clamp(12px, 1.15vw, 15px);
+  order: 2;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: clamp(12px, 1.1vw, 15px);
   font-weight: 400;
-  color: #cfd3de;
-  background: rgba(10, 10, 20, 0.55);
-  backdrop-filter: blur(6px);
+  line-height: 1.5;
+  color: #aeb4c4;
+}
+
+.udth-overlay {
+  transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udth-overlay,
+  .udth-line:has(.udth-th, .udth-en) {
+    transition: none;
+    animation: none;
+  }
 }
 
 .udth-status {
@@ -192,93 +231,117 @@ html.udth-hide-native .ytp-caption-window-container {
   right: 14px;
   bottom: 72px;
   z-index: 2147483200;
-  width: 320px;
+  width: 332px;
   max-width: calc(100% - 28px);
   max-height: calc(100% - 96px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
-  padding: 14px;
-  border-radius: 18px;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  padding: 0 14px 14px;
+  border-radius: 22px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(34, 32, 52, 0.94), rgba(16, 16, 26, 0.96));
-  backdrop-filter: blur(18px) saturate(150%);
+  background: rgba(14, 13, 24, 0.92);
+  backdrop-filter: blur(22px) saturate(160%);
   color: #eef0f6;
   font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: udth-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: udth-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
   transform-origin: bottom right;
 }
 
 @keyframes udth-pop {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.97);
+    transform: translateY(10px) scale(0.96);
   }
 }
 
+/* Header: a brand tile, name, language pair and version — and it stays put
+   while the body scrolls, so the menu never loses its title. */
 .udth-menu-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 11px;
+  margin: 0 -14px 12px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(180deg, rgba(14, 13, 24, 1) 70%, rgba(14, 13, 24, 0));
+}
+
+.udth-logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6d5bf0, #c084fc);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(124, 108, 255, 0.45);
+}
+
+.udth-menu-titles {
+  flex: 1;
+  min-width: 0;
 }
 
 .udth-menu-title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  line-height: 1.25;
 }
 
 .udth-menu-sub {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: rgba(167, 139, 250, 0.16);
-  color: #d8ccff;
-  font-size: 11.5px;
-  font-weight: 600;
+  gap: 5px;
+  color: #aeb4c4;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .udth-menu-arrow {
   color: #a78bfa;
 }
 
-/* Two big switch-like tiles: the two things you reach for mid-sentence. */
+.udth-ver {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.16);
+  color: #d8ccff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two switch tiles: icon, name, state. */
 .udth-tiles {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
-.udth-chip {
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #c9cdd8;
+.udth-chip,
+.udth-btn {
   font: inherit;
-  font-weight: 600;
-  white-space: nowrap;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, transform 100ms ease;
+  transition: background 150ms ease, border-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
 }
 
-.udth-chip:hover {
-  background: rgba(255, 255, 255, 0.11);
-  color: #fff;
+.udth-chip:active,
+.udth-btn:active {
+  transform: scale(0.97);
 }
 
-.udth-chip:active {
-  transform: scale(0.98);
-}
-
-.udth-chip:focus-visible {
+.udth-chip:focus-visible,
+.udth-btn:focus-visible {
   outline: 2px solid #a78bfa;
   outline-offset: 2px;
 }
@@ -286,40 +349,76 @@ html.udth-hide-native .ytp-caption-window-container {
 .udth-tile {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 46px;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #c4c9d6;
+  text-align: left;
 }
 
-.udth-tile::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #6b7280;
+.udth-tile:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.udth-tile-ico {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.udth-tile-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.udth-tile-txt b {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.udth-tile-txt small {
+  font-size: 11.5px;
+  font-weight: 500;
+  opacity: 0.75;
 }
 
 .udth-chip-on {
   border-color: transparent;
-  background: linear-gradient(135deg, #6d5bf0, #9b5cf6);
+  background: linear-gradient(135deg, #6d5bf0, #a855f7);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(109, 91, 240, 0.4);
+  box-shadow: 0 8px 22px rgba(109, 91, 240, 0.45);
 }
 
 .udth-chip-on:hover {
-  background: linear-gradient(135deg, #7a69f5, #a76ffa);
+  background: linear-gradient(135deg, #7b6bf6, #b266f8);
 }
 
-.udth-chip-on.udth-tile::before {
-  background: #fff;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+.udth-chip-on .udth-tile-ico {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.udth-section {
+  margin: 0 2px 6px;
+  color: #8f96a8;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .udth-card {
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
@@ -327,7 +426,7 @@ html.udth-hide-native .ytp-caption-window-container {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 5px 10px;
+  gap: 4px 10px;
   margin-bottom: 12px;
 }
 
@@ -336,19 +435,18 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-field > span {
-  grid-column: 1 / -1;
-  color: #aab0c0;
-  font-size: 12px;
+  color: #c4c9d6;
+  font-size: 12.5px;
   font-weight: 500;
 }
 
 .udth-field select {
   grid-column: 1 / -1;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  background: #1d1c2b;
+  border-radius: 12px;
+  background: #1b1a2b;
   color: #eef0f6;
   font: inherit;
 }
@@ -359,53 +457,111 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-field input[type="range"] {
+  grid-column: 1 / -1;
   width: 100%;
   height: 4px;
-  margin: 8px 0;
+  margin: 7px 0 3px;
   accent-color: #a78bfa;
   cursor: pointer;
 }
 
 .udth-field output {
-  min-width: 46px;
   color: #d8ccff;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
+/* A real switch instead of a bare checkbox. */
 .udth-check {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 12px;
-  color: #cfd3de;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: #d3d7e2;
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
 }
 
 .udth-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.udth-switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: #4b5163;
+  transition: background 160ms ease;
+}
+
+.udth-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
   width: 16px;
   height: 16px;
-  accent-color: #a78bfa;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 160ms ease;
+}
+
+.udth-check input:checked + .udth-switch {
+  background: linear-gradient(135deg, #6d5bf0, #a855f7);
+}
+
+.udth-check input:checked + .udth-switch::after {
+  transform: translateX(16px);
+}
+
+.udth-check input:focus-visible + .udth-switch {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
 }
 
 .udth-menu-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1.4fr;
   gap: 8px;
 }
 
-.udth-menu-actions .udth-chip {
-  text-align: center;
+.udth-btn {
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: transparent;
+  color: #e4e7ef;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.udth-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.udth-btn-primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #6d5bf0, #a855f7);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(109, 91, 240, 0.4);
+}
+
+.udth-btn-primary:hover {
+  background: linear-gradient(135deg, #7b6bf6, #b266f8);
 }
 
 .udth-panel-note:not(:empty) {
   margin-top: 12px;
-  padding: 9px 11px;
-  border-radius: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
   color: #b6bccb;
   font-size: 12px;
@@ -414,7 +570,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-panel-note-error:not(:empty) {
-  background: rgba(239, 68, 68, 0.14);
+  background: rgba(239, 68, 68, 0.15);
   color: #fecaca;
 }
 
@@ -422,7 +578,10 @@ html.udth-hide-native .ytp-caption-window-container {
   .udth-menu {
     animation: none;
   }
-  .udth-tool svg {
+  .udth-switch,
+  .udth-switch::after,
+  .udth-chip,
+  .udth-btn {
     transition: none;
   }
 }

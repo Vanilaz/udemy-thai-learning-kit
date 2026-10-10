@@ -170,13 +170,44 @@
     state.line = line;
     window.addEventListener("resize", placeOverlay);
     document.addEventListener("fullscreenchange", placeOverlay);
-    placeOverlay();
+    // The pointer events go on the container: the overlay itself is
+    // pointer-events:none so it can never swallow a click meant for the player.
+    for (const type of ["mousemove", "pointerdown", "keydown", "touchstart"]) {
+      container.addEventListener(type, onPointerActivity, { passive: true });
+    }
+    state.video && state.video.addEventListener("pause", placeOverlay);
+    state.video && state.video.addEventListener("play", placeOverlay);
+    onPointerActivity();
   }
 
   // The overlay used to sit a fixed 9% above the bottom. Udemy's control bar and
   // scrubber have a fixed pixel height, so on a short player (or a window that
   // is not full height) 9% landed on top of the progress bar. Measure the bar
   // instead and ride just above whichever is taller.
+  // Where the subtitle sits depends on whether the player's controls are on
+  // screen. Udemy fades its control bar out a few seconds after the mouse stops
+  // and the bar's box stays in the layout while invisible, so measuring it
+  // alone left the subtitle floating high over an empty picture. Controls count
+  // as showing while the video is paused or the pointer moved recently.
+  const UI = { lastMove: 0, timer: null };
+  const CONTROLS_IDLE_MS = 2800;
+
+  function controlsShowing() {
+    const video = state.video;
+    if (video && video.paused) return true;
+    if (Date.now() - UI.lastMove < CONTROLS_IDLE_MS) return true;
+    if (panel.open) return true;
+    return false;
+  }
+
+  function onPointerActivity() {
+    const wasHidden = !controlsShowing();
+    UI.lastMove = Date.now();
+    if (wasHidden) placeOverlay();
+    clearTimeout(UI.timer);
+    UI.timer = setTimeout(placeOverlay, CONTROLS_IDLE_MS + 60);
+  }
+
   let placeQueued = false;
   function placeOverlay() {
     if (placeQueued) return;
@@ -190,27 +221,32 @@
       if (!box) return;
       const boxRect = box.getBoundingClientRect();
       if (!boxRect.height) return;
-      let lift = boxRect.height * 0.09;
-      try {
-        const bar = site.controlBar && site.controlBar();
-        if (bar) {
-          const r = bar.getBoundingClientRect();
-          if (r.height && r.bottom > boxRect.top) {
-            // +18px clears the scrubber that sits just above the button row.
-            lift = Math.max(lift, boxRect.bottom - r.top + 18);
+
+      const showing = controlsShowing();
+      // Resting position: close to the bottom edge, like film subtitles.
+      let lift = Math.max(18, boxRect.height * 0.045);
+      if (showing) {
+        lift = boxRect.height * 0.09;
+        try {
+          const bar = site.controlBar && site.controlBar();
+          if (bar) {
+            const r = bar.getBoundingClientRect();
+            if (r.height && r.bottom > boxRect.top) {
+              lift = Math.max(lift, boxRect.bottom - r.top + 18);
+            }
           }
+        } catch {
+          /* keep the percentage fallback */
         }
-      } catch {
-        /* keep the percentage fallback */
       }
-      // Never push the text past the middle of a very small player.
       lift = Math.min(lift, boxRect.height * 0.45);
       overlay.style.bottom = `${Math.round(lift)}px`;
+      overlay.classList.toggle("udth-raised", showing);
+
       if (panel.el) {
-        const menuBottom = Math.round(Math.max(64, lift - 8));
+        const barTop = Math.max(64, boxRect.height * 0.09, lift - 8);
+        const menuBottom = Math.round(Math.max(64, showing ? barTop : 72));
         panel.el.style.bottom = `${menuBottom}px`;
-        // Never taller than the room above the bar, so it scrolls inside
-        // itself instead of running off the top of a short player.
         panel.el.style.maxHeight = `${Math.max(160, Math.round(boxRect.height - menuBottom - 12))}px`;
       }
     });
@@ -350,10 +386,12 @@
     // A glyph in the same family as the player's own icons (ก → A), not a word
     // floating on its own. The state dot says whether anything is switched on.
     button.innerHTML =
-      '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' +
-      '<path fill="currentColor" d="M4 5h9v2H4zM7 7h2c0 2.2-1 4.2-3 5.4l-1-1.6C6.4 9.8 7 8.7 7 7z' +
-      'M9 11l-1.2 1.6c1 .7 2.2 1.3 3.7 1.7l.5-1.9c-1-.2-2-.8-3-1.4zM14 10h2l4 10h-2.1l-.9-2.4h-4' +
-      'l-.9 2.4H10.100zM15.700 12.300L14.600 15.600h2.200z"/></svg>' +
+      '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">' +
+      '<rect x="2.5" y="3.5" width="19" height="17" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+      '<path d="M6.800 9.200h5.400M9.500 9.200v.8c0 1.700-.9 3.200-2.600 4M9.600 11.800c.6 1 1.500 1.700 2.600 2.100" ' +
+      'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M13.300 16l2.300-6.300 2.300 6.300M14.100 14h3" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/></svg>' +
       '<i class="udth-dot" aria-hidden="true"></i>';
 
     // Parked in the corner to begin with; dockButton moves it into the real
@@ -366,29 +404,45 @@
     const el = document.createElement("div");
     el.className = "udth-menu";
     el.hidden = true;
+    const version = (() => {
+      try {
+        return chrome.runtime.getManifest().version;
+      } catch {
+        return "";
+      }
+    })();
     el.innerHTML =
-      '<div class="udth-menu-head"><div class="udth-menu-title">ซับไทย & เสียงพากย์</div>' +
+      '<div class="udth-menu-head">' +
+      '<div class="udth-logo" aria-hidden="true">ท</div>' +
+      '<div class="udth-menu-titles"><div class="udth-menu-title">ฮองเรียน</div>' +
       '<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>ไทย</div></div>' +
+      `<span class="udth-ver">v${version}</span></div>` +
       '<div class="udth-tiles">' +
-      '<button type="button" class="udth-chip udth-tile" data-udth="subs">ซับไทย</button>' +
-      '<button type="button" class="udth-chip udth-tile" data-udth="dub">พากย์เสียง</button>' +
+      '<button type="button" class="udth-chip udth-tile" data-udth="subs" aria-pressed="false">' +
+      '<span class="udth-tile-ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3.500" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 11h4M7 14.500h8M14 11h3" stroke="currentColor" stroke-width="1.800" stroke-linecap="round"/></svg></span>' +
+      '<span class="udth-tile-txt"><b>ซับไทย</b><small data-state="subs">ปิด</small></span></button>' +
+      '<button type="button" class="udth-chip udth-tile" data-udth="dub" aria-pressed="false">' +
+      '<span class="udth-tile-ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 10v4h3.500l4.500 3.500v-11L7.500 10H4z" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linejoin="round"/><path d="M15.500 9.200c1.300 1.600 1.300 4 0 5.600M18 6.800c2.400 3 2.400 7.400 0 10.400" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round"/></svg></span>' +
+      '<span class="udth-tile-txt"><b>พากย์เสียง</b><small data-state="dub">ปิด</small></span></button>' +
       "</div>" +
+      '<div class="udth-section">เสียง</div>' +
       '<div class="udth-card">' +
       '<label class="udth-field"><span>เครื่องมือเสียง</span><select data-udth="engine"></select></label>' +
       '<label class="udth-field"><span>เลือกเสียง</span><select data-udth="voice"></select></label>' +
       "</div>" +
+      '<div class="udth-section">ระดับเสียง</div>' +
       '<div class="udth-card">' +
-      '<label class="udth-field"><span>ความดังเสียงพากย์</span>' +
+      '<label class="udth-field"><span>เสียงพากย์</span>' +
       '<input type="range" min="0" max="1" step="0.05" data-udth="dubVol"><output data-udth="dubVolOut"></output></label>' +
-      '<label class="udth-field"><span>ความดังเสียงต้นฉบับ</span>' +
+      '<label class="udth-field"><span>เสียงต้นฉบับ</span>' +
       '<input type="range" min="0" max="1" step="0.05" data-udth="srcVol"><output data-udth="srcVolOut"></output></label>' +
       '<label class="udth-field"><span>เร่งเสียงได้สูงสุด</span>' +
       '<input type="range" min="1" max="2" step="0.05" data-udth="rate"><output data-udth="rateOut"></output></label>' +
       "</div>" +
-      '<label class="udth-check"><input type="checkbox" data-udth="dual"><span>แสดงอังกฤษกำกับใต้ซับไทย</span></label>' +
+      '<label class="udth-check"><input type="checkbox" data-udth="dual"><span class="udth-switch" aria-hidden="true"></span><span>แสดงอังกฤษกำกับใต้ซับไทย</span></label>' +
       '<div class="udth-menu-actions">' +
-      '<button type="button" class="udth-chip" data-udth="retry">↻ แปลใหม่</button>' +
-      '<button type="button" class="udth-chip" data-udth="section">แปลทั้ง Section</button>' +
+      '<button type="button" class="udth-btn" data-udth="retry">↻ แปลใหม่</button>' +
+      '<button type="button" class="udth-btn udth-btn-primary" data-udth="section">แปลทั้ง Section</button>' +
       "</div>" +
       '<div class="udth-panel-note"></div>';
 
@@ -641,9 +695,11 @@
     const subs = el.querySelector('[data-udth="subs"]');
     const dub = el.querySelector('[data-udth="dub"]');
     subs.classList.toggle("udth-chip-on", state.enabled);
-    subs.textContent = state.enabled ? "ซับไทย · เปิด" : "ซับไทย · ปิด";
+    panel.el.querySelector('[data-state="subs"]').textContent = state.enabled ? "เปิดอยู่" : "ปิด";
+    subs.setAttribute("aria-pressed", String(state.enabled));
     dub.classList.toggle("udth-chip-on", state.dubbingEnabled);
-    dub.textContent = state.dubbingEnabled ? "พากย์เสียง · เปิด" : "พากย์เสียง · ปิด";
+    panel.el.querySelector('[data-state="dub"]').textContent = state.dubbingEnabled ? "เปิดอยู่" : "ปิด";
+    dub.setAttribute("aria-pressed", String(state.dubbingEnabled));
 
     // The button carries the state, so what is on is readable without opening
     // anything — the same job the player's own CC button does.
