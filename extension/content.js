@@ -168,6 +168,45 @@
 
     state.overlay = overlay;
     state.line = line;
+    window.addEventListener("resize", placeOverlay);
+    document.addEventListener("fullscreenchange", placeOverlay);
+    placeOverlay();
+  }
+
+  // The overlay used to sit a fixed 9% above the bottom. Udemy's control bar and
+  // scrubber have a fixed pixel height, so on a short player (or a window that
+  // is not full height) 9% landed on top of the progress bar. Measure the bar
+  // instead and ride just above whichever is taller.
+  let placeQueued = false;
+  function placeOverlay() {
+    if (placeQueued) return;
+    placeQueued = true;
+    requestAnimationFrame(() => {
+      placeQueued = false;
+      const overlay = state.overlay;
+      const video = state.video;
+      if (!overlay || !overlay.isConnected || !video) return;
+      const box = overlay.offsetParent || overlay.parentElement;
+      if (!box) return;
+      const boxRect = box.getBoundingClientRect();
+      if (!boxRect.height) return;
+      let lift = boxRect.height * 0.09;
+      try {
+        const bar = site.controlBar && site.controlBar();
+        if (bar) {
+          const r = bar.getBoundingClientRect();
+          if (r.height && r.bottom > boxRect.top) {
+            // +18px clears the scrubber that sits just above the button row.
+            lift = Math.max(lift, boxRect.bottom - r.top + 18);
+          }
+        }
+      } catch {
+        /* keep the percentage fallback */
+      }
+      // Never push the text past the middle of a very small player.
+      lift = Math.min(lift, boxRect.height * 0.45);
+      overlay.style.bottom = `${Math.round(lift)}px`;
+    });
   }
 
   function renderStatus(text, kind = "info") {
@@ -204,7 +243,9 @@
     const th = document.createElement("div");
     th.className = "udth-th";
     th.textContent = cue.th || cue.en || "";
+    th.lang = "th";
     state.line.appendChild(th);
+    placeOverlay();
   }
 
   // -------------------------------------------------------- in-player panel

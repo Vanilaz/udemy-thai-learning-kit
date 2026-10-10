@@ -6,7 +6,7 @@
       :root { color-scheme: light dark; --bg:#fff; --surface:#f8f8fb; --fg:#18181d; --muted:#6f7080; --line:#e5e5ec; --accent:#6554d9; --accent-ink:#fff; --ok:#187a46; --ok-bg:#eaf8ef; --err:#b42318; --err-bg:#fff0ef; --focus:#9c8fff; }
       @media (prefers-color-scheme: dark) { :root { --bg:#19191f; --surface:#24242c; --fg:#f1f0f6; --muted:#afafbd; --line:#353540; --accent:#9c8fff; --accent-ink:#19191f; --ok:#83dfa7; --ok-bg:#153524; --err:#ffb4aa; --err-bg:#41201e; --focus:#c6bdff; } }
       * { box-sizing:border-box; }
-      body { width:336px; margin:0; padding:14px; background:var(--bg); color:var(--fg); font:13px/1.45 "Segoe UI", system-ui,sans-serif; }
+      body { width:344px; max-height:600px; overflow-y:auto; scrollbar-width:thin; margin:0; padding:16px; background:var(--bg); color:var(--fg); font:13px/1.6 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif; }
       button, select, input { font:inherit; }
       button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
       .topbar { display:flex; align-items:center; justify-content:space-between; margin:2px 2px 14px; }
@@ -14,12 +14,12 @@
       .version { color:var(--muted); font-size:11px; }
       .status { display:flex; align-items:center; min-height:42px; padding:9px 11px; border-radius:10px; background:var(--err-bg); color:var(--err); font-weight:600; line-height:1.35; }
       .status.ok { background:var(--ok-bg); color:var(--ok); }
-      .panel { margin-top:10px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface); }
-      .panel-title { padding:10px 12px 7px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.055em; text-transform:uppercase; }
-      .setting { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:46px; padding:8px 12px; border-top:1px solid var(--line); }
+      .panel { margin-top:12px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--surface); }
+      .panel-title { padding:11px 14px 6px; color:var(--muted); font-size:12px; font-weight:700; letter-spacing:0; }
+      .setting { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:50px; padding:9px 14px; border-top:1px solid var(--line); }
       .setting:first-of-type { border-top:0; }
       .setting-label { min-width:0; font-weight:600; }
-      .setting-help { display:block; margin-top:1px; color:var(--muted); font-size:11px; font-weight:400; }
+      .setting-help { display:block; margin-top:1px; color:var(--muted); font-size:12px; font-weight:400; }
       .switch { position:relative; display:inline-flex; flex:0 0 auto; width:38px; height:22px; cursor:pointer; }
       .switch input { position:absolute; inline-size:1px; block-size:1px; opacity:0; }
       .switch span { position:absolute; inset:0; border-radius:999px; background:#a9aab5; transition:background 160ms ease; }
@@ -32,11 +32,11 @@
       .field { margin-top:9px; }
       .field:first-child { margin-top:0; }
       .field-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:5px; }
-      .field label { color:var(--muted); font-size:11px; font-weight:600; }
+      .field label { color:var(--muted); font-size:12px; font-weight:600; }
       output { color:var(--fg); font-size:11px; font-variant-numeric:tabular-nums; }
       select { width:100%; min-width:0; height:34px; padding:0 28px 0 9px; border:1px solid var(--line); border-radius:7px; color:var(--fg); background:var(--bg); }
       input[type="range"] { width:100%; margin:0; accent-color:var(--accent); cursor:pointer; }
-      .actions { display:grid; gap:8px; margin-top:12px; }
+      .actions { display:grid; gap:8px; margin-top:14px; position:sticky; bottom:-16px; padding:10px 0 2px; background:linear-gradient(to top,var(--bg) 78%,transparent); }
       button { min-height:38px; border:0; border-radius:9px; padding:8px 12px; background:var(--accent); color:var(--accent-ink); font-weight:700; cursor:pointer; transition:filter 160ms ease, transform 160ms ease; }
       button:hover:not(:disabled) { filter:brightness(1.07); }
       button:active:not(:disabled) { transform:translateY(1px); }
@@ -48,13 +48,13 @@
       .queue-detail { margin-top:2px; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .queue-track { height:4px; margin-top:9px; overflow:hidden; border-radius:999px; background:var(--line); }
       .queue-fill { width:0; height:100%; border-radius:inherit; background:var(--accent); transition:width 220ms ease-out; }
-      .hint { margin:12px 2px 0; color:var(--muted); font-size:11px; line-height:1.45; }
+      .hint { margin:12px 2px 0; color:var(--muted); font-size:12px; line-height:1.45; }
       code { padding:1px 4px; border-radius:4px; background:var(--surface); font-family:Consolas,monospace; }
       @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; } }
     </style>
   </head>
   <body>
-    <header class="topbar"><h1>Udemy ซับไทย</h1><span class="version">เสียงพากย์</span></header>
+    <header class="topbar"><h1>Udemy ซับไทย</h1><span class="version">ซับไทย + เสียงพากย์</span></header>
     <div id="status" class="status">กำลังตรวจสอบ ...</div>
 
     <section class="panel" aria-labelledby="captions-title">
