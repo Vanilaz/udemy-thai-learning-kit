@@ -2,80 +2,160 @@
 <html lang="th">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ฮองเรียน</title>
     <style>
-      :root { color-scheme: light dark; --bg:#fff; --surface:#f8f8fb; --fg:#18181d; --muted:#6f7080; --line:#e5e5ec; --accent:#6d5bf0; --accent2:#9b5cf6; --accent-ink:#fff; --ok:#187a46; --ok-bg:#eaf8ef; --err:#b42318; --err-bg:#fff0ef; --focus:#9c8fff; }
-      @media (prefers-color-scheme: dark) { :root { --bg:#19191f; --surface:#24242c; --fg:#f1f0f6; --muted:#afafbd; --line:#353540; --accent:#8b7bff; --accent2:#b18cff; --accent-ink:#fff; --ok:#83dfa7; --ok-bg:#153524; --err:#ffb4aa; --err-bg:#41201e; --focus:#c6bdff; } }
-      * { box-sizing:border-box; }
-      body { width:344px; max-height:600px; overflow-y:auto; scrollbar-width:thin; margin:0; padding:16px; background:var(--bg); color:var(--fg); font:13px/1.6 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif; }
-      button, select, input { font:inherit; }
-      button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-      .topbar { display:flex; align-items:center; gap:10px; margin:0 0 14px; padding:12px 14px; border-radius:16px; color:#fff; background:linear-gradient(135deg,#5b4ee6,#9b5cf6); box-shadow:0 8px 22px #6d5bf055; }
-      .topbar::before { content:'ไทย'; display:grid; place-items:center; width:34px; height:34px; border-radius:11px; background:#ffffff26; font-weight:800; font-size:13px; }
-      h1 { margin:0; font-size:16px; font-weight:800; letter-spacing:0; }
-      .version { margin-left:auto; padding:3px 9px; border-radius:999px; background:#ffffff26; color:#fff; font-size:11px; font-weight:600; }
-      .status { display:flex; align-items:center; min-height:42px; padding:9px 11px; border-radius:14px; background:var(--err-bg); color:var(--err); font-weight:600; line-height:1.35; }
-      .status.ok { background:var(--ok-bg); color:var(--ok); }
-      .panel { margin-top:12px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--surface); }
-      .panel-title { padding:11px 14px 6px; color:var(--muted); font-size:12px; font-weight:700; letter-spacing:0; }
-      .setting { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:50px; padding:9px 14px; border-top:1px solid var(--line); }
-      .setting:first-of-type { border-top:0; }
-      .setting-label { min-width:0; font-weight:600; }
-      .setting-help { display:block; margin-top:1px; color:var(--muted); font-size:12px; font-weight:400; }
-      .switch { position:relative; display:inline-flex; flex:0 0 auto; width:38px; height:22px; cursor:pointer; }
-      .switch input { position:absolute; inline-size:1px; block-size:1px; opacity:0; }
-      .switch span { position:absolute; inset:0; border-radius:999px; background:#a9aab5; transition:background 160ms ease; }
-      .switch span::after { content:""; position:absolute; width:16px; height:16px; top:3px; left:3px; border-radius:50%; background:#fff; box-shadow:0 1px 2px #0003; transition:transform 160ms ease; }
-      .switch input:checked + span { background:linear-gradient(135deg,var(--accent),var(--accent2)); }
-      .switch input:checked + span::after { transform:translateX(16px); }
-      .switch input:focus-visible + span { outline:2px solid var(--focus); outline-offset:2px; }
-      .audio-settings { border-top:1px solid var(--line); padding:8px 12px 12px; }
-      .audio-settings[hidden] { display:none; }
-      .field { margin-top:9px; }
-      .field:first-child { margin-top:0; }
-      .field-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:5px; }
-      .field label { color:var(--muted); font-size:12px; font-weight:600; }
-      output { color:var(--fg); font-size:11px; font-variant-numeric:tabular-nums; }
-      select { width:100%; min-width:0; height:34px; padding:0 28px 0 9px; border:1px solid var(--line); border-radius:7px; color:var(--fg); background:var(--bg); }
-      input[type="range"] { width:100%; margin:0; accent-color:var(--accent); cursor:pointer; }
-      .actions { display:grid; gap:8px; margin-top:14px; position:sticky; bottom:-16px; padding:10px 0 2px; background:linear-gradient(to top,var(--bg) 78%,transparent); }
-      button { min-height:42px; border:0; border-radius:12px; padding:8px 12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); box-shadow:0 6px 16px #6d5bf033; color:var(--accent-ink); font-weight:700; cursor:pointer; transition:filter 160ms ease, transform 160ms ease; }
-      button:hover:not(:disabled) { filter:brightness(1.07); }
-      button:active:not(:disabled) { transform:translateY(1px); }
-      button:disabled { opacity:.45; cursor:default; }
-      button.secondary { border:1px solid var(--line); background:transparent; color:var(--fg); box-shadow:none; }
-      button.secondary:hover:not(:disabled) { background:color-mix(in srgb,var(--fg) 7%,transparent); filter:none; }
-      .queue { margin-top:10px; padding:10px 11px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
-      .queue-title { font-weight:700; }
-      .queue-detail { margin-top:2px; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .queue-track { height:4px; margin-top:9px; overflow:hidden; border-radius:999px; background:var(--line); }
-      .queue-fill { width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width 220ms ease-out; }
-      .hint { margin:12px 2px 0; color:var(--muted); font-size:12px; line-height:1.45; }
-      code { padding:1px 4px; border-radius:4px; background:var(--surface); font-family:Consolas,monospace; }
-      @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; } }
+      /* ฮองเรียน popup: dark-first, one violet accent, Thai-safe type.
+         Tokens first so a theme change is one block. */
+      :root {
+        color-scheme: dark light;
+        --bg: #0f0e1a;
+        --bg2: #171528;
+        --card: #1c1a30;
+        --card2: #251f3d;
+        --line: rgba(255, 255, 255, 0.09);
+        --fg: #f3f2fa;
+        --muted: #a5a3bd;
+        --accent: #7c6cff;
+        --accent2: #c084fc;
+        --ok: #34d399;
+        --ok-bg: rgba(52, 211, 153, 0.12);
+        --err: #fb7185;
+        --err-bg: rgba(251, 113, 133, 0.13);
+        --focus: #c4b5fd;
+        --r: 16px;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f5fc; --bg2: #ffffff; --card: #ffffff; --card2: #f1effb;
+          --line: rgba(30, 20, 80, 0.1); --fg: #1b1833; --muted: #5f5c7a;
+          --accent: #6a58f2; --accent2: #a855f7;
+          --ok: #0f9d6b; --ok-bg: rgba(15, 157, 107, 0.1);
+          --err: #d92d4a; --err-bg: rgba(217, 45, 74, 0.09); --focus: #6a58f2;
+        }
+      }
+      * { box-sizing: border-box; }
+      html { background: var(--bg); }
+      body {
+        width: 380px; margin: 0; padding: 14px 14px 16px;
+        background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 62%), var(--bg);
+        color: var(--fg);
+        font: 400 14px/1.6 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button, select, input { font: inherit; color: inherit; }
+      :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+      .top { display: flex; align-items: center; gap: 12px; padding: 2px 2px 14px; }
+      .logo { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+        font-size: 22px; font-weight: 700; box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 50%, transparent); }
+      .brand { flex: 1; min-width: 0; line-height: 1.3; }
+      .brand h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: 0; }
+      .brand p { margin: 0; color: var(--muted); font-size: 12.5px; }
+      .version { padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 20%, transparent);
+        color: var(--focus); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+      .status { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 10px 14px; border-radius: var(--r);
+        background: var(--err-bg); color: var(--err); font-weight: 600; font-size: 13.5px; line-height: 1.45; }
+      .status::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 22%, transparent); }
+      .status.ok { background: var(--ok-bg); color: var(--ok); }
+
+      .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+      .tile { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 96px;
+        padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); cursor: pointer;
+        transition: background 160ms ease, border-color 160ms ease, transform 100ms ease, box-shadow 160ms ease; }
+      .tile:hover { background: var(--card2); }
+      .tile:active { transform: scale(0.98); }
+      .tile input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+      .tile:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+      .tile .ico { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+      .tile .name { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+      .tile .st { margin-top: auto; font-size: 12px; color: var(--muted); }
+      .tile .st-on { display: none; }
+      .tile:has(input:checked) { border-color: transparent; color: #fff;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 42%, transparent); }
+      .tile:has(input:checked) .ico { background: rgba(255, 255, 255, 0.22); }
+      .tile:has(input:checked) .st { color: rgba(255, 255, 255, 0.88); }
+      .tile:has(input:checked) .st-on { display: inline; }
+      .tile:has(input:checked) .st-off { display: none; }
+
+      .card { margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); }
+      .card[hidden] { display: none; }
+      .card-title { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+      .field { margin-top: 12px; }
+      .field:first-of-type { margin-top: 0; }
+      .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+      .field label { color: var(--fg); font-size: 13px; font-weight: 500; }
+      output { color: var(--focus); font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      select { width: 100%; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px;
+        background: var(--bg2); color: var(--fg); cursor: pointer; }
+      input[type="range"] { width: 100%; height: 4px; margin: 8px 0 2px; accent-color: var(--accent); cursor: pointer; }
+
+      .actions { display: grid; gap: 8px; margin-top: 14px; }
+      button { min-height: 46px; padding: 8px 14px; border: 0; border-radius: 14px; cursor: pointer; font-weight: 600; font-size: 14px;
+        transition: filter 160ms ease, transform 100ms ease, background 160ms ease; }
+      button:active:not(:disabled) { transform: scale(0.98); }
+      button:disabled { opacity: 0.42; cursor: default; }
+      #section { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2));
+        box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 38%, transparent); }
+      #section:hover:not(:disabled) { filter: brightness(1.08); }
+      button.secondary { border: 1px solid var(--line); background: transparent; color: var(--fg); }
+      button.secondary:hover:not(:disabled) { background: var(--card2); }
+
+      .queue { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); }
+      .queue-title { font-weight: 600; font-size: 13.5px; }
+      .queue-detail { margin-top: 2px; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .queue-track { height: 6px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: var(--line); }
+      .queue-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 220ms ease-out; }
+      .hint { margin: 14px 4px 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; text-align: center; }
+      code { padding: 1px 6px; border-radius: 6px; background: var(--card2); font: 12px Consolas, monospace; }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
     </style>
   </head>
   <body>
-    <header class="topbar"><h1>Udemy ซับไทย</h1><span class="version">ซับไทย + เสียงพากย์</span></header>
-    <div id="status" class="status">กำลังตรวจสอบ ...</div>
+    <header class="top">
+      <div class="logo" aria-hidden="true">ท</div>
+      <div class="brand"><h1>ฮองเรียน</h1><p>ซับไทย + เสียงพากย์ Udemy / YouTube</p></div>
+      <span class="version">v</span>
+    </header>
 
-    <section class="panel" aria-labelledby="captions-title">
-      <div class="panel-title" id="captions-title">คำบรรยาย</div>
-      <div class="setting"><label class="setting-label" for="enabled">แสดงซับไทย</label><label class="switch" aria-label="แสดงซับไทย"><input type="checkbox" id="enabled" checked /><span></span></label></div>
-      <div class="setting"><label class="setting-label" for="dual">แสดงภาษาอังกฤษด้วย</label><label class="switch" aria-label="แสดงภาษาอังกฤษด้วย"><input type="checkbox" id="dual" checked /><span></span></label></div>
+    <div id="status" class="status" role="status" aria-live="polite">กำลังตรวจสอบ ...</div>
+
+    <div class="tiles" role="group" aria-label="การแสดงผล">
+      <label class="tile">
+        <input type="checkbox" id="enabled" checked />
+        <span class="ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 11h4M7 14.5h8M14 11h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        <span class="name">ซับไทย</span>
+        <span class="st"><span class="st-on">เปิดอยู่</span><span class="st-off">ปิด</span></span>
+      </label>
+      <label class="tile">
+        <input type="checkbox" id="dual" checked />
+        <span class="ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 7h8M9 5v2c0 3-1.6 5.2-4 6.5M7 10c.8 1.6 2.2 2.8 4 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 19l3-8 3 8M14.6 16.5h3.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="name">อังกฤษกำกับ</span>
+        <span class="st"><span class="st-on">เปิดอยู่</span><span class="st-off">ปิด</span></span>
+      </label>
+      <label class="tile">
+        <input type="checkbox" id="dubbing" />
+        <span class="ico"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 10v4h3.5l4.5 3.5v-11L7.5 10H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M15.5 9.2c1.3 1.6 1.3 4 0 5.6M18 6.8c2.4 3 2.4 7.4 0 10.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        <span class="name">พากย์เสียง</span>
+        <span class="st"><span class="st-on">เปิดอยู่</span><span class="st-off">ปิด</span></span>
+      </label>
+    </div>
+
+    <section class="card" id="audioSettings" aria-labelledby="audio-title" hidden>
+      <h2 class="card-title" id="audio-title">ตั้งค่าเสียงพากย์</h2>
+      <div class="field"><div class="field-head"><label for="ttsEngine">เครื่องมือเสียง</label></div><select id="ttsEngine"></select></div>
+      <div class="field"><div class="field-head"><label for="voice">เลือกเสียง</label></div><select id="voice"><option value="">เลือกอัตโนมัติ</option></select></div>
+      <div class="field"><div class="field-head"><label for="dubbingVolume">ความดังเสียงพากย์</label><output id="dubbingValue" for="dubbingVolume">100%</output></div><input type="range" id="dubbingVolume" min="0" max="1" step="0.05" value="1" /></div>
+      <div class="field"><div class="field-head"><label for="originalAudioVolume">ความดังเสียงผู้สอน</label><output id="originalAudioValue" for="originalAudioVolume">15%</output></div><input type="range" id="originalAudioVolume" min="0" max="1" step="0.05" value="0.15" /></div>
     </section>
 
-    <section class="panel" aria-labelledby="voice-title">
-      <div class="panel-title" id="voice-title">เสียงพากย์</div>
-      <div class="setting"><div class="setting-label">พากย์ไทยด้วยเสียง HD<span class="setting-help">หยุดและตามต่อเมื่อ pause หรือ seek</span></div><label class="switch" aria-label="เปิดเสียงพากย์ไทย"><input type="checkbox" id="dubbing" /><span></span></label></div>
-      <div class="audio-settings" id="audioSettings" hidden>
-        <div class="field"><div class="field-head"><label for="ttsEngine">ระบบเสียง</label></div><select id="ttsEngine"></select></div>
-        <div class="field"><div class="field-head"><label for="voice">เสียง</label></div><select id="voice"><option value="">เลือกอัตโนมัติ</option></select></div>
-        <div class="field"><div class="field-head"><label for="dubbingVolume">ระดับเสียงพากย์</label><output id="dubbingValue" for="dubbingVolume">100%</output></div><input type="range" id="dubbingVolume" min="0" max="1" step="0.05" value="1" /></div>
-        <div class="field"><div class="field-head"><label for="originalAudioVolume">เสียงผู้สอน</label><output id="originalAudioValue" for="originalAudioVolume">15%</output></div><input type="range" id="originalAudioVolume" min="0" max="1" step="0.05" value="0.15" /></div>
-      </div>
-    </section>
-
-    <div class="actions"><button id="section">แปลทั้ง Section นี้ล่วงหน้า</button><button id="retry" class="secondary">แปลบทเรียนนี้ใหม่</button></div>
+    <div class="actions">
+      <button id="section">แปลทั้ง Section นี้ล่วงหน้า</button>
+      <button id="retry" class="secondary">↻ แปลบทเรียนนี้ใหม่</button>
+    </div>
 
     <div class="queue" id="queue" style="display: none" aria-live="polite">
       <div class="queue-title" id="queueTitle"></div>
@@ -83,9 +163,7 @@
       <div class="queue-track"><div class="queue-fill" id="queueFill"></div></div>
     </div>
 
-    <p class="hint" id="hint">
-      ต้องเปิด <code>start-server.cmd</code> ค้างไว้ระหว่างเรียน
-    </p>
+    <p class="hint" id="hint">ต้องเปิด <code>start-server.cmd</code> ค้างไว้ระหว่างเรียน</p>
 
     <script src="popup.js"></script>
   </body>

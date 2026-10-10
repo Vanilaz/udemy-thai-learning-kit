@@ -54,7 +54,7 @@ window.openMenu=()=>{panel.open=true;el.hidden=false;placeOverlay()};
 const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1100, height: 520 } })
 const errs = []; p.on('pageerror', (e) => errs.push(e.message))
 await p.setContent(page, { waitUntil: 'load' })
-const bottoms = () => p.evaluate(() => ({ bottom: document.querySelector('.udth-overlay').style.bottom, raised: document.querySelector('.udth-overlay').classList.contains('udth-raised') }))
+const _b = () => p.evaluate(() => ({ bottom: document.querySelector('.udth-overlay').style.bottom, raised: document.querySelector('.udth-overlay').classList.contains('udth-raised') }))
 await p.mouse.move(500, 300); await p.waitForTimeout(300)
 const shown = await bottoms(); await p.screenshot({ path: 'C:/Users/ADMINI~1/AppData/Local/Temp/rd_controls.png' })
 await p.waitForTimeout(3300)
