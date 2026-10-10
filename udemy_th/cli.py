@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 import sys
+from datetime import date
 from pathlib import Path
 
 from .build import BuildError, build
@@ -82,6 +85,17 @@ def main(argv: list[str] | None = None) -> int:
     p_glossary.add_argument("--course", default="", help="ชื่อคอร์สสำหรับหัวเรื่อง")
     p_glossary.add_argument(
         "--out", type=Path, default=ROOT / "glossary" / "glossary.md"
+    )
+    p_glossary.add_argument(
+        "--tidy",
+        action="store_true",
+        help="รวมคำซ้ำ (เช่น Array.from กับ Array.from()) และตัดคำที่ไม่ใช่ศัพท์โปรแกรม (สำรองไฟล์เดิมไว้ให้)",
+    )
+    p_glossary.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="ส่งออกเป็น JSON (ใช้ทำแฟลชการ์ด) นอกเหนือจาก Markdown",
     )
 
     p_docs = sub.add_parser(
@@ -300,6 +314,23 @@ def _cmd_translate(args, glossary: Glossary) -> int:
 
 
 def _cmd_glossary(args, glossary: Glossary) -> int:
+    if args.tidy:
+        backup = GLOSSARY_PATH.with_name(f"glossary.backup-{date.today().isoformat()}.json")
+        if GLOSSARY_PATH.exists() and not backup.exists():
+            shutil.copy2(GLOSSARY_PATH, backup)
+            print(f"สำรองไฟล์เดิมไว้ที่ {backup}")
+        before = len(glossary.terms)
+        merged, dropped = glossary.tidy()
+        glossary.save()
+        print(f"จัดระเบียบคลังศัพท์: {before} -> {len(glossary.terms)} คำ (รวมคำซ้ำ {merged}, ตัดคำที่ไม่ใช่ศัพท์โปรแกรม {dropped})")
+    if args.json:
+        cards = [
+            {"term": t.term, "thai": t.thai, "explain": t.explanation, "seen": len(t.lessons)}
+            for t in sorted(glossary.terms.values(), key=lambda t: (-len(t.lessons), t.term.lower()))
+        ]
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(cards, ensure_ascii=False), encoding="utf-8")
+        print(f"ส่งออก JSON {len(cards)} คำ -> {args.json}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(glossary.to_markdown(args.course), encoding="utf-8")
     print(f"ส่งออกคลังศัพท์ {len(glossary.terms)} คำ -> {args.out}")

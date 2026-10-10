@@ -56,6 +56,27 @@ _queue: list[str] = []
 _cv = threading.Condition()
 
 
+# Only the Chrome extension (and plain tools such as curl, which send no Origin
+# header) may talk to this server. A server on 127.0.0.1 with "Allow-Origin: *"
+# can be driven by ANY web page you happen to have open: it could queue
+# translation jobs on your machine (burning your agy / API quota) or ask for
+# speech synthesis. Browsers always attach an Origin to cross-site requests,
+# so refusing every origin that is not the extension closes that door.
+_EXTENSION_ORIGIN_PREFIX = "chrome-extension://"
+_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
+
+
+def origin_allowed(origin: str | None) -> bool:
+    return not origin or origin.startswith(_EXTENSION_ORIGIN_PREFIX)
+
+
+def host_allowed(host_header: str | None) -> bool:
+    """Reject DNS-rebinding: the Host must be the loopback name we bound to."""
+    if not host_header:
+        return True
+    return host_header.rsplit(":", 1)[0].strip("[]") in _ALLOWED_HOSTS
+
+
 class _Handler(BaseHTTPRequestHandler):
     # Injected by serve()
     cache_dir: Path
@@ -69,6 +90,22 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter console
         return
 
+    def _cors_origin(self) -> str:
+        """Echo the extension's own origin back; never a wildcard."""
+        return self.headers.get("Origin") or "null"
+
+    def _forbidden(self) -> bool:
+        """Answer 403 and return True when this caller must be refused."""
+        if origin_allowed(self.headers.get("Origin")) and host_allowed(self.headers.get("Host")):
+            return False
+        body = json.dumps({"error": "forbidden"}).encode("utf-8")
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     # -- CORS ---------------------------------------------------------------
 
     def _send(self, code: int, payload: dict) -> None:
@@ -76,14 +113,16 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):  # noqa: N802
+        if self._forbidden():
+            return
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", "0")
@@ -92,6 +131,8 @@ class _Handler(BaseHTTPRequestHandler):
     # -- Routes -------------------------------------------------------------
 
     def do_GET(self):  # noqa: N802
+        if self._forbidden():
+            return
         path = urlparse(self.path).path
         if path == "/health":
             self._send(200, {"ok": True, "engine": self.engine, "voices": self.tts.catalogue()})
@@ -138,11 +179,13 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", self.AUDIO_TYPES[suffix])
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.end_headers()
         self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
+        if self._forbidden():
+            return
         path = urlparse(self.path).path
         if path not in ("/translate", "/tts"):
             self._send(404, {"error": "not found"})
