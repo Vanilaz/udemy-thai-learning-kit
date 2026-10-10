@@ -1853,9 +1853,16 @@
     while ((node = walk.nextNode())) {
       const text = node.nodeValue.replace(/\s+/g, " ").trim();
       if (!text || text.length < 2) continue;
+      // Skip numbers at the start of a list item or pure numbers
+      if (/^[\d\.]*$/.test(text)) continue;
+      
       const el = node.parentElement;
+      if (!el) continue;
       if (el.tagName === "CODE" || el.tagName === "PRE" || el.closest("pre")) continue;
       if (el.classList.contains("udth-assignment-th")) continue;
+      // Exclude Udemy's own UI text that might bleed in
+      if (el.closest('button') || el.closest('[class*="progress-bar"]') || el.closest('[class*="banner"]')) continue;
+      
       blocks.push(el);
     }
     return [...new Set(blocks)];
@@ -1864,7 +1871,7 @@
   async function startAssignment(id) {
     let container = null;
     for (let i = 0; i < 40; i++) {
-      container = document.querySelector('[class*="assignment-instructions--"]');
+      container = document.querySelector('[class*="assignment-instructions--"], [class*="assignment--content"], [class*="tabs--content"]');
       if (container) break;
       await sleep(500);
     }
