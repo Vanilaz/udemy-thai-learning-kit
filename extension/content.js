@@ -407,33 +407,43 @@
   // docking it are therefore separate events, and docking has to keep being
   // retried. Leaving it parked in the corner forever was the bug.
   function dockButton(button) {
-    // Already sitting in a real control row: nothing to do.
-    if (button.isConnected && !button.classList.contains("udth-pill-floating")) return true;
+    const visible = (el) => el.offsetWidth > 0 && el.offsetHeight > 0;
+    // Docked somewhere real already. A button that exists but measures 0x0 is
+    // sitting inside a hidden menu — measured on the live Udemy page, where
+    // `[data-purpose*="settings"]` also matched "go-to-settings", an item in
+    // the closed settings dropdown, and the button vanished into it.
+    if (button.isConnected && !button.classList.contains("udth-pill-floating") && visible(button)) {
+      return true;
+    }
 
-    // Find a native tool button (settings / captions / fullscreen) and sit
-    // right before it. Whatever the site calls its classes, an icon button
-    // that is a *sibling* of the native ones is where a toolbar item belongs,
-    // and copying the native class gives it the same size and hover state.
     const root = (() => {
       let el = state.video;
       for (let i = 0; i < 8 && el && el.parentElement; i += 1) el = el.parentElement;
       return el || document;
     })();
+
+    // Exact names first (Udemy), then the aria-labels of both languages, then
+    // YouTube. Every candidate must be on screen and outside any menu.
     const anchors = [
-      '[data-purpose*="settings"]',
-      '[data-purpose*="captions"]',
-      '[data-purpose*="fullscreen"]',
-      'button[aria-label*="etting" i]',
-      'button[aria-label*="aption" i]',
-      'button[aria-label*="ull" i]',
+      '[data-purpose="settings-button"]',
+      '[data-purpose="captions-dropdown-button"]',
+      '[data-purpose="theatre-mode-toggle-button"]',
+      '[data-purpose="fullscreen-toggle"]',
+      'button[aria-label="การตั้งค่า"]',
+      'button[aria-label="คำบรรยาย"]',
+      'button[aria-label="เข้าสู่เต็มหน้าจอ"]',
+      'button[aria-label="Settings"]',
+      'button[aria-label="Captions"]',
       ".ytp-settings-button",
     ];
     for (const selector of anchors) {
-      const found = root.querySelector(selector);
+      const found = [...root.querySelectorAll(selector)].find(
+        (el) => visible(el) && !el.closest('[class*="dropdown-menu"], [role="menu"], ul')
+      );
       if (!found) continue;
-      let native = found.closest("button") || found;
-      // Step up while the native control is the only child of its wrapper, so
-      // we end up next to its peers rather than inside someone's box.
+      let native = found;
+      // Step up while the control is alone in its wrapper (Udemy wraps each
+      // button in a popper div) so we land among its peers, not inside one.
       while (native.parentElement && native.parentElement.children.length < 2) {
         native = native.parentElement;
       }
@@ -447,7 +457,7 @@
     }
 
     const bar = site.controlBar();
-    if (!bar) return false;
+    if (!bar || !visible(bar)) return false;
     bar.insertBefore(button, bar.firstChild);
     button.classList.remove("udth-pill-floating");
     button.classList.add("udth-tool");
