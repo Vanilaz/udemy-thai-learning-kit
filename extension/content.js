@@ -1388,8 +1388,67 @@
 
   // --------------------------------------------------------------- sync loop
 
+  // Udemy cuts captions into 3-5 word display fragments, often mid-clause
+  // ("...another tutorial on this section where we are covering"). Shown one by
+  // one, the Thai changes every second or two and each piece starts and ends in
+  // the middle of a thought, which is what makes it so hard to read. The
+  // viewer therefore shows whole sentences: consecutive fragments are merged
+  // using the English punctuation, and each sentence stays up for as long as it
+  // is being spoken. Long sentences are split at a fragment boundary, never in
+  // the middle of one, so no word is ever cut.
+  const VIEW_MAX_TH_CHARS = 140; // only applies mid-sentence; about three lines of Thai
+  const VIEW_MAX_SECONDS = 12;
+  const VIEW_BRIDGE_GAP = 0.6; // keep a sentence up across a tiny pause: no flicker
+  const view = { src: null, len: -1, cues: [] };
+
+  function buildViewCues(cues) {
+    const out = [];
+    let cur = null;
+    const flush = () => {
+      if (cur) out.push(cur);
+      cur = null;
+    };
+    for (const cue of cues) {
+      const th = (cue.th || "").trim();
+      const en = (cue.en || "").trim();
+      if (!th && !en) continue;
+      if (cur) {
+        const nextLen = (cur.th + " " + th).length;
+        const tooLong = nextLen > VIEW_MAX_TH_CHARS && cur.th.length >= 24;
+        const gap = cue.start - cur.end > 1.2;
+        const tooOld = cue.end - cur.start > VIEW_MAX_SECONDS;
+        if (tooLong || gap || tooOld) flush();
+      }
+      if (cur) {
+        cur.th = (cur.th + " " + th).trim();
+        cur.en = (cur.en + " " + en).trim();
+        cur.end = cue.end;
+      } else {
+        cur = { start: cue.start, end: cue.end, th, en };
+      }
+      if (endsSentence(en) && cur.th.length >= 12) flush();
+    }
+    flush();
+    // Hold each sentence through a short pause rather than blanking the screen.
+    out.forEach((c, n) => {
+      const next = out[n + 1];
+      if (next && next.start - c.end <= VIEW_BRIDGE_GAP) c.end = next.start;
+    });
+    return out;
+  }
+
+  function viewCues() {
+    if (view.src !== state.cues || view.len !== state.cues.length) {
+      view.src = state.cues;
+      view.len = state.cues.length;
+      view.cues = buildViewCues(state.cues);
+      state.activeIndex = -1;
+    }
+    return view.cues;
+  }
+
   function findCueAt(time) {
-    const cues = state.cues;
+    const cues = viewCues();
     if (!cues.length) return -1;
 
     const current = cues[state.activeIndex];
@@ -1409,7 +1468,7 @@
       const index = findCueAt(state.video.currentTime);
       if (index !== state.activeIndex) {
         state.activeIndex = index;
-        renderCue(index >= 0 ? state.cues[index] : null);
+        renderCue(index >= 0 ? viewCues()[index] : null);
       }
     }
     tickDubbing();
@@ -2308,7 +2367,7 @@
         if (state.status === "ready" && (!state.overlay || !state.overlay.isConnected)) {
           state.overlay = null;
           ensureOverlay(state.video);
-          renderCue(state.activeIndex >= 0 ? state.cues[state.activeIndex] : null);
+          renderCue(state.activeIndex >= 0 ? viewCues()[state.activeIndex] : null);
         }
         if (!panel.el || !panel.el.isConnected || !panel.button || !panel.button.isConnected) {
           renderPanel();

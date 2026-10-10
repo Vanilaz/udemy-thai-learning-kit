@@ -44,9 +44,9 @@ html.udth-hide-native .ytp-caption-window-container {
    keep their own look. */
 .udth-line:has(.udth-th, .udth-en) {
   position: relative;
-  padding: 6px 16px 7px 18px;
-  border-radius: 12px;
-  background: rgba(10, 9, 20, 0.92);
+  padding: 7px 18px 9px;
+  border-radius: 10px;
+  background: rgba(6, 10, 15, 0.94);
   backdrop-filter: blur(10px) saturate(150%);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   overflow: hidden;
@@ -57,10 +57,10 @@ html.udth-hide-native .ytp-caption-window-container {
   content: "";
   position: absolute;
   left: 0;
-  top: 0;
+  right: 0;
   bottom: 0;
-  width: 3px;
-  background: linear-gradient(180deg, #7c6cff, #c084fc);
+  height: 3px;
+  background: linear-gradient(90deg, #0ea5e9, #14b8a6, #34d399);
 }
 
 @keyframes udth-cue-in {
@@ -85,8 +85,8 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-th {
-  font-size: clamp(15px, 1.5vw, 21px);
-  font-weight: 500;
+  font-size: clamp(16px, 1.6vw, 22px);
+  font-weight: 600;
   line-height: 1.55; /* enough for Thai tone marks, not so much it eats the picture */
   letter-spacing: 0;
   word-break: normal;
@@ -171,7 +171,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-tool:focus-visible {
-  outline: 2px solid #a78bfa;
+  outline: 2px solid #5eead4;
   outline-offset: -4px;
   border-radius: 8px;
 }
@@ -196,7 +196,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-pill-open svg {
-  color: #c4b5fd;
+  color: #99f6e4;
   opacity: 1;
 }
 
@@ -215,7 +215,7 @@ html.udth-hide-native .ytp-caption-window-container {
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 50%;
-  background: rgba(18, 18, 28, 0.82);
+  background: rgba(8, 14, 20, 0.82);
   backdrop-filter: blur(8px);
   color: #fff;
   cursor: pointer;
@@ -240,10 +240,10 @@ html.udth-hide-native .ytp-caption-window-container {
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-  padding: 0 14px 14px;
-  border-radius: 22px;
+  padding: 0 14px 12px;
+  border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(14, 13, 24, 0.92);
+  background: rgba(8, 14, 20, 0.92);
   backdrop-filter: blur(22px) saturate(160%);
   color: #eef0f6;
   font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
@@ -268,9 +268,9 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   align-items: center;
   gap: 11px;
-  margin: 0 -14px 12px;
-  padding: 14px 14px 12px;
-  background: linear-gradient(180deg, rgba(14, 13, 24, 1) 70%, rgba(14, 13, 24, 0));
+  margin: 0 -14px 8px;
+  padding: 12px 14px 8px;
+  background: linear-gradient(180deg, rgba(8, 14, 20, 1) 70%, rgba(8, 14, 20, 0));
 }
 
 .udth-logo {
@@ -280,11 +280,11 @@ html.udth-hide-native .ytp-caption-window-container {
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #6d5bf0, #c084fc);
+  background: linear-gradient(135deg, #0ea5e9, #34d399);
   color: #fff;
   font-size: 20px;
   font-weight: 800;
-  box-shadow: 0 6px 18px rgba(124, 108, 255, 0.45);
+  box-shadow: 0 6px 18px rgba(20, 184, 166, 0.45);
 }
 
 .udth-menu-titles {
@@ -308,15 +308,15 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-menu-arrow {
-  color: #a78bfa;
+  color: #5eead4;
 }
 
 .udth-ver {
   flex: none;
   padding: 2px 9px;
   border-radius: 999px;
-  background: rgba(167, 139, 250, 0.16);
-  color: #d8ccff;
+  background: rgba(94, 234, 212, 0.16);
+  color: #99f6e4;
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -327,7 +327,7 @@ html.udth-hide-native .ytp-caption-window-container {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .udth-chip,
@@ -344,7 +344,7 @@ html.udth-hide-native .ytp-caption-window-container {
 
 .udth-chip:focus-visible,
 .udth-btn:focus-visible {
-  outline: 2px solid #a78bfa;
+  outline: 2px solid #5eead4;
   outline-offset: 2px;
 }
 
@@ -352,8 +352,8 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 56px;
-  padding: 8px 12px;
+  min-height: 48px;
+  padding: 6px 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.05);
@@ -396,13 +396,13 @@ html.udth-hide-native .ytp-caption-window-container {
 
 .udth-chip-on {
   border-color: transparent;
-  background: linear-gradient(135deg, #6d5bf0, #a855f7);
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
   color: #fff;
-  box-shadow: 0 8px 22px rgba(109, 91, 240, 0.45);
+  box-shadow: 0 8px 22px rgba(14, 165, 233, 0.45);
 }
 
 .udth-chip-on:hover {
-  background: linear-gradient(135deg, #7b6bf6, #b266f8);
+  background: linear-gradient(135deg, #38bdf8, #34d399);
 }
 
 .udth-chip-on .udth-tile-ico {
@@ -410,6 +410,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-section {
+  display: none;
   margin: 0 2px 6px;
   color: #8f96a8;
   font-size: 12px;
@@ -417,8 +418,8 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-card {
-  margin-bottom: 14px;
-  padding: 12px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -428,8 +429,8 @@ html.udth-hide-native .ytp-caption-window-container {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 4px 10px;
-  margin-bottom: 12px;
+  gap: 2px 10px;
+  margin-bottom: 8px;
 }
 
 .udth-card > .udth-field:last-child {
@@ -445,16 +446,16 @@ html.udth-hide-native .ytp-caption-window-container {
 .udth-field select {
   grid-column: 1 / -1;
   width: 100%;
-  padding: 9px 10px;
+  padding: 6px 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  background: #1b1a2b;
+  border-radius: 10px;
+  background: #0d1a24;
   color: #eef0f6;
   font: inherit;
 }
 
 .udth-field select:focus-visible {
-  outline: 2px solid #a78bfa;
+  outline: 2px solid #5eead4;
   outline-offset: 1px;
 }
 
@@ -462,13 +463,13 @@ html.udth-hide-native .ytp-caption-window-container {
   grid-column: 1 / -1;
   width: 100%;
   height: 4px;
-  margin: 7px 0 3px;
-  accent-color: #a78bfa;
+  margin: 5px 0 1px;
+  accent-color: #5eead4;
   cursor: pointer;
 }
 
 .udth-field output {
-  color: #d8ccff;
+  color: #99f6e4;
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -479,7 +480,7 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   color: #d3d7e2;
   font-size: 12.5px;
   font-weight: 500;
@@ -516,7 +517,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-check input:checked + .udth-switch {
-  background: linear-gradient(135deg, #6d5bf0, #a855f7);
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
 }
 
 .udth-check input:checked + .udth-switch::after {
@@ -524,7 +525,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-check input:focus-visible + .udth-switch {
-  outline: 2px solid #a78bfa;
+  outline: 2px solid #5eead4;
   outline-offset: 2px;
 }
 
@@ -535,8 +536,8 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-btn {
-  min-height: 42px;
-  padding: 8px 12px;
+  min-height: 38px;
+  padding: 6px 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 14px;
   background: transparent;
@@ -551,13 +552,13 @@ html.udth-hide-native .ytp-caption-window-container {
 
 .udth-btn-primary {
   border-color: transparent;
-  background: linear-gradient(135deg, #6d5bf0, #a855f7);
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
   color: #fff;
-  box-shadow: 0 8px 20px rgba(109, 91, 240, 0.4);
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
 }
 
 .udth-btn-primary:hover {
-  background: linear-gradient(135deg, #7b6bf6, #b266f8);
+  background: linear-gradient(135deg, #38bdf8, #34d399);
 }
 
 .udth-panel-note:not(:empty) {
@@ -617,7 +618,7 @@ html.udth-hide-native .ytp-caption-window-container {
   padding: 26px 24px 22px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(34, 32, 52, 0.97), rgba(16, 16, 26, 0.98));
+  background: linear-gradient(180deg, rgba(16, 28, 38, 0.97), rgba(16, 16, 26, 0.98));
   color: #eceef3;
   text-align: center;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
@@ -628,7 +629,7 @@ html.udth-hide-native .ytp-caption-window-container {
   height: 34px;
   border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.16);
-  border-top-color: #a78bfa;
+  border-top-color: #5eead4;
   animation: udth-spin 850ms linear infinite;
 }
 
@@ -693,7 +694,7 @@ html.udth-hide-native .ytp-caption-window-container {
   padding: 11px 13px 12px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(34, 32, 52, 0.95), rgba(16, 16, 26, 0.96));
+  background: linear-gradient(180deg, rgba(16, 28, 38, 0.95), rgba(16, 16, 26, 0.96));
   backdrop-filter: blur(14px);
   color: #eceef3;
   font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
@@ -766,7 +767,7 @@ html.udth-hide-native .ytp-caption-window-container {
   height: 100%;
   width: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #6d5bf0, #a78bfa);
+  background: linear-gradient(90deg, #0ea5e9, #5eead4);
   transition: width 220ms ease-out;
 }
 
