@@ -25,7 +25,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import os
+import re
 import sys
+import time
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +37,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .build import _parse_subtitles, _parse_terms, _split_sections
+from . import __version__
+from .env import ENV_PATH, LOADED as ENV_LOADED
 from .glossary import Glossary
 from .models import Lesson, Segment
 from .google_tts import TtsError
@@ -54,27 +60,110 @@ _job_args: dict[str, tuple] = {}
 _queue: list[str] = []
 # Guards all three of the above, and wakes the worker when work arrives.
 _cv = threading.Condition()
+_store_path: Path | None = None
+MAX_PENDING_JOBS = 200
+MAX_HISTORY_JOBS = 200
+
+# How many lectures may be translated at the same time.
+#
+# Each worker runs one `agy` process at a time, and `agy` spends most of a
+# lecture waiting on the provider rather than on this machine: measured over
+# three real lectures, running them one after another took 56.5s while running
+# all three at once took 21.9s (2.58x) with no per-lecture slowdown; five at
+# once finished in 26.8s against a ~94s serial baseline (3.51x), by which point
+# each individual lecture had started to take noticeably longer.
+#
+# Three is the point where throughput is won without the lecture the viewer is
+# actually waiting for getting slower. Set UDTH_WORKERS=1 to go back to one at
+# a time.
+WORKER_COUNT = max(1, int(os.environ.get("UDTH_WORKERS", "3")))
 
 
-# Only the Chrome extension (and plain tools such as curl, which send no Origin
-# header) may talk to this server. A server on 127.0.0.1 with "Allow-Origin: *"
-# can be driven by ANY web page you happen to have open: it could queue
-# translation jobs on your machine (burning your agy / API quota) or ask for
-# speech synthesis. Browsers always attach an Origin to cross-site requests,
-# so refusing every origin that is not the extension closes that door.
-_EXTENSION_ORIGIN_PREFIX = "chrome-extension://"
-_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
+class JobCancelled(Exception):
+    """Cooperative cancellation; an in-flight provider call may still finish."""
 
 
-def origin_allowed(origin: str | None) -> bool:
-    return not origin or origin.startswith(_EXTENSION_ORIGIN_PREFIX)
+def _atomic_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
 
 
-def host_allowed(host_header: str | None) -> bool:
-    """Reject DNS-rebinding: the Host must be the loopback name we bound to."""
-    if not host_header:
-        return True
-    return host_header.rsplit(":", 1)[0].strip("[]") in _ALLOWED_HOSTS
+def _persist_jobs() -> None:
+    # Called with _cv held. Progress stays in memory; lifecycle changes survive restart.
+    if _store_path is None:
+        return
+    rows = []
+    for key, job in _jobs.items():
+        args = _job_args.get(key)
+        if args is None:
+            continue
+        rows.append({"id": key, "job": {k: v for k, v in job.items() if k != "cues"},
+                     "args": [str(a) if isinstance(a, Path) else a for a in args]})
+    _atomic_json(_store_path, {"version": 1, "jobs": rows, "queue": _queue})
+
+
+def _restore_jobs(cache_dir: Path, glossary_path: Path) -> None:
+    global _store_path
+    with _cv:
+        _store_path = cache_dir / "jobs-state.json"
+        _jobs.clear()
+        _job_args.clear()
+        _queue.clear()
+        if not _store_path.exists():
+            return
+        try:
+            data = json.loads(_store_path.read_text(encoding="utf-8"))
+            restored = {}
+            for row in data["jobs"]:
+                key, job, args = row["id"], dict(row["job"]), list(row["args"])
+                if not re.fullmatch(r"[a-f0-9]{20}", key) or len(args) != 8:
+                    raise ValueError("invalid saved job")
+                args[3:5] = [cache_dir, glossary_path]
+                if job["status"] == "running":
+                    job.update(status="queued", progress=0, resumed=True)
+                elif job["status"] == "cancelling":
+                    job.update(status="cancelled", cancel_requested=True)
+                restored[key] = (job, tuple(args))
+            for key, (job, args) in restored.items():
+                _jobs[key], _job_args[key] = job, args
+            order = list(dict.fromkeys(data.get("queue", []) + list(restored)))
+            _queue.extend(k for k in order if k in _jobs and _jobs[k]["status"] == "queued")
+            _persist_jobs()
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            _jobs.clear()
+            _job_args.clear()
+            _queue.clear()
+            # Preserve the original for diagnosis instead of silently overwriting it.
+            raise RuntimeError(f"อ่านประวัติคิวไม่ได้: {_store_path}") from exc
+
+
+def _check_cancelled(key: str) -> None:
+    with _cv:
+        if _jobs.get(key, {}).get("cancel_requested"):
+            raise JobCancelled()
+
+
+def _job_action(key: str, action: str) -> str:
+    with _cv:
+        if key not in _jobs:
+            raise KeyError(key)
+        job = _jobs[key]
+        if action == "cancel":
+            if job["status"] == "queued":
+                _queue.remove(key)
+                job.update(status="cancelled", cancel_requested=True)
+            elif job["status"] in ("running", "cancelling"):
+                job.update(status="cancelling", cancel_requested=True)
+            else:
+                raise ValueError("งานนี้ไม่ได้อยู่ระหว่างแปล")
+            job["updated_at"] = time.time()
+            _persist_jobs()
+            return job["status"]
+        if job["status"] not in ("error", "cancelled"):
+            raise ValueError("ลองใหม่ได้เฉพาะงานที่ผิดพลาดหรือยกเลิกแล้ว")
+        return _enqueue(key, job.get("priority", PRIORITY_NOW), job["title"], _job_args[key])
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -90,39 +179,63 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter console
         return
 
-    def _cors_origin(self) -> str:
-        """Echo the extension's own origin back; never a wildcard."""
-        return self.headers.get("Origin") or "null"
+    # -- CORS ---------------------------------------------------------------
 
-    def _forbidden(self) -> bool:
-        """Answer 403 and return True when this caller must be refused."""
-        if origin_allowed(self.headers.get("Origin")) and host_allowed(self.headers.get("Host")):
+    def _allowed_origin(self, write: bool = False) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        if re.fullmatch(r"chrome-extension://[a-p]{32}", origin):
+            return True
+        return not write and origin in ("https://www.udemy.com", "https://www.youtube.com")
+
+    def _refuse(self, status: int, error: str) -> None:
+        """Answer an error before the body was read, then close.
+
+        The body is read and discarded first. Closing a socket that still holds
+        unread request bytes makes Windows send RST, and the client then loses
+        the error response it was about to read (seen as ConnectionAborted).
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if 0 < length <= MAX_BODY_BYTES and not self.headers.get("Transfer-Encoding"):
+            self.rfile.read(length)
+        self.close_connection = True
+        self._send(status, {"error": error})
+
+    def _check_access(self, write: bool = False) -> bool:
+        host = self.headers.get("Host", "")
+        port = self.server.server_port
+        if host not in (f"127.0.0.1:{port}", f"localhost:{port}") or not self._allowed_origin(write):
+            self._refuse(403, "ไม่อนุญาตให้หน้านี้เรียกเซิร์ฟเวอร์")
             return False
-        body = json.dumps({"error": "forbidden"}).encode("utf-8")
-        self.send_response(403)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
         return True
 
-    # -- CORS ---------------------------------------------------------------
+    def _cors_headers(self) -> None:
+        origin = self.headers.get("Origin")
+        if origin and self._allowed_origin(self.command in ("POST", "OPTIONS")):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _send(self, code: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self._cors_headers()
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):  # noqa: N802
-        if self._forbidden():
+        if not self._check_access(write=True):
             return
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
+        self._cors_headers()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", "0")
@@ -131,11 +244,11 @@ class _Handler(BaseHTTPRequestHandler):
     # -- Routes -------------------------------------------------------------
 
     def do_GET(self):  # noqa: N802
-        if self._forbidden():
+        if not self._check_access():
             return
         path = urlparse(self.path).path
         if path == "/health":
-            self._send(200, {"ok": True, "engine": self.engine, "voices": self.tts.catalogue()})
+            self._send(200, {"ok": True, "version": __version__, "engine": self.engine, "voices": self.tts.catalogue()})
             return
         if path == "/voices":
             self._send(200, {"engines": self.tts.catalogue()})
@@ -148,6 +261,14 @@ class _Handler(BaseHTTPRequestHandler):
             with _cv:
                 job = _jobs.get(job_id)
                 snapshot = dict(job) if job else None
+                if snapshot and snapshot["status"] == "done" and "cues" not in snapshot:
+                    args = _job_args.get(job_id)
+                    result = _read_cached(self.cache_dir / f"{job_id}.json", args[2]) if args else None
+                    if result is None:
+                        _set_job(job_id, status="error", error="ไฟล์คำแปลหายหรือไม่สมบูรณ์ กดลองใหม่จากคิว")
+                        snapshot = dict(_jobs[job_id])
+                    else:
+                        snapshot["cues"] = result
             if snapshot is None:
                 self._send(404, {"error": "ไม่พบงานนี้"})
                 return
@@ -179,21 +300,28 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", self.AUDIO_TYPES[suffix])
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
+        self._cors_headers()
         self.end_headers()
         self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
-        if self._forbidden():
+        if not self._check_access(write=True):
             return
         path = urlparse(self.path).path
-        if path not in ("/translate", "/tts"):
-            self._send(404, {"error": "not found"})
+        action = re.fullmatch(r"/job/([a-f0-9]{20})/(cancel|retry)", path)
+        if path not in ("/translate", "/tts", "/tts/warmup") and not action:
+            self._refuse(404, "not found")
             return
 
-        length = int(self.headers.get("Content-Length") or 0)
+        if self.headers.get_content_type() != "application/json" or self.headers.get("Transfer-Encoding"):
+            self._refuse(415, "ต้องส่ง application/json พร้อม Content-Length")
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
         if length <= 0 or length > MAX_BODY_BYTES:
-            self._send(400, {"error": "ขนาดข้อมูลไม่ถูกต้อง"})
+            self._refuse(400, "ขนาดข้อมูลไม่ถูกต้อง")
             return
 
         try:
@@ -202,13 +330,40 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": "อ่าน JSON ไม่ได้"})
             return
 
+        if not isinstance(payload, dict):
+            self._send(400, {"error": "JSON ต้องเป็น object"})
+            return
+
+        if action:
+            try:
+                status = _job_action(*action.groups())
+                self._send(200, {"status": status})
+            except KeyError:
+                self._send(404, {"error": "ไม่พบงานนี้"})
+            except ValueError as exc:
+                self._send(409, {"error": str(exc)})
+            return
+
+        if path == "/tts/warmup":
+            engine = payload.get("engine")
+            if not isinstance(engine, str) or not engine:
+                self._send(400, {"error": "engine ต้องเป็นข้อความ"})
+                return
+            self._send(200, self.tts.warmup(engine))
+            return
+
         if path == "/tts":
+            if not isinstance(payload.get("text"), str) or not isinstance(payload.get("voice"), str):
+                self._send(400, {"error": "text และ voice ต้องเป็นข้อความ"})
+                return
             self._handle_tts(payload)
             return
 
         cues = payload.get("cues") or []
-        if not cues:
-            self._send(400, {"error": "ไม่มี cues ส่งมา"})
+        try:
+            _validate_translation(payload, cues)
+        except ValueError as exc:
+            self._send(400, {"error": str(exc)})
             return
 
         title = (payload.get("title") or "บทเรียน").strip()
@@ -229,24 +384,25 @@ class _Handler(BaseHTTPRequestHandler):
         key = _cache_key(course, f"{lecture}\x00{mode}", cues)
 
         cached = self.cache_dir / f"{key}.json"
-        if cached.exists() and force:
-            cached.unlink()
-        elif cached.exists():
+        result = _read_cached(cached, cues) if not force else None
+        if result is not None:
             answer = {"job": key, "status": "done", "cached": True}
             # A batch only wants to know it is already done. Sending back every
             # cue of a dozen lectures nobody is reading yet is pure waste.
             if not batch:
-                answer["cues"] = json.loads(cached.read_text(encoding="utf-8"))
+                answer["cues"] = result
             self._send(200, answer)
             return
 
-        status = _enqueue(
-            key,
-            priority=PRIORITY_BATCH if batch else PRIORITY_NOW,
-            title=title,
-            args=(course, title, cues, self.cache_dir, self.glossary_path,
-                  self.engine, self.effort, mode),
-        )
+        try:
+            status = _enqueue(
+                key, priority=PRIORITY_BATCH if batch else PRIORITY_NOW, title=title,
+                args=(course, title, cues, self.cache_dir, self.glossary_path,
+                      self.engine, self.effort, mode),
+            )
+        except ValueError as exc:
+            self._send(429, {"error": str(exc)})
+            return
         self._send(202, {"job": key, "status": status})
 
     def _handle_tts(self, payload: dict) -> None:
@@ -254,11 +410,49 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             # The voice id routes to its engine, so the extension never sends an
             # engine name that could contradict the voice it picked.
-            result = self.tts.synthesize(str(payload.get("text") or ""), voice)
+            # source_lang set means the text is the original, not Thai: only
+            # an engine that can translate (Seamless T2ST) accepts that.
+            source_lang = payload.get("source_lang")
+            source_lang = source_lang if isinstance(source_lang, str) and source_lang else None
+            result = self.tts.synthesize(str(payload.get("text") or ""), voice, source_lang)
         except TtsError as exc:
             self._send(400, {"error": str(exc)})
             return
         self._send(200, {**result, "url": f"/audio/{result['file']}"})
+
+
+def _validate_translation(payload: dict, cues) -> None:
+    if not isinstance(cues, list) or not 1 <= len(cues) <= 20000:
+        raise ValueError("cues ต้องเป็นรายการ 1–20000 บรรทัด")
+    for field in ("title", "course", "lecture", "mode"):
+        if field in payload and not isinstance(payload[field], str):
+            raise ValueError(f"{field} ต้องเป็นข้อความ")
+    for field in ("batch", "force"):
+        if field in payload and not isinstance(payload[field], bool):
+            raise ValueError(f"{field} ต้องเป็น boolean")
+    for cue in cues:
+        if not isinstance(cue, dict) or not isinstance(cue.get("text"), str) or not cue["text"].strip():
+            raise ValueError("ทุก cue ต้องมี text ที่ไม่ว่าง")
+        times = [cue.get("start"), cue.get("end")]
+        if not all(isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t) for t in times):
+            raise ValueError("start และ end ต้องเป็นเวลาที่ถูกต้อง")
+        if times[0] < 0 or times[1] <= times[0]:
+            raise ValueError("end ต้องมากกว่า start และเวลาต้องไม่ติดลบ")
+
+
+def _read_cached(path: Path, cues: list[dict]) -> list[dict] | None:
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(result, list) or len(result) != len(cues):
+            return None
+        for row, cue in zip(result, cues):
+            if (not isinstance(row, dict) or not isinstance(row.get("th"), str) or not row["th"].strip()
+                    or row.get("en") != cue["text"].strip()
+                    or row.get("start") != cue["start"] or row.get("end") != cue["end"]):
+                return None
+        return result
+    except (OSError, ValueError):
+        return None
 
 
 def _cache_key(course: str, title: str, cues: list[dict]) -> str:
@@ -278,19 +472,30 @@ def _set_job(key: str, **fields) -> None:
     with _cv:
         job = _jobs.setdefault(key, {})
         job.update(fields)
+        if "status" in fields:
+            job["updated_at"] = time.time()
+            _persist_jobs()
 
 
 def _enqueue(key: str, priority: int, title: str, args: tuple) -> str:
     """Queue a translation, or join the one already queued for the same key."""
     with _cv:
         existing = _jobs.get(key)
-        if existing and existing["status"] in ("queued", "running"):
+        if existing and existing["status"] in ("queued", "running", "cancelling"):
             # Already waiting because a batch queued it. If the user has now
             # opened that very lecture, move it to the front of the queue
             # instead of making them wait out everything ahead of it.
             if priority < existing.get("priority", PRIORITY_BATCH):
                 existing["priority"] = priority
+                _persist_jobs()
             return existing["status"]
+
+        if len(_queue) >= MAX_PENDING_JOBS:
+            raise ValueError("คิวเต็มแล้ว รอให้งานเดิมเสร็จก่อน")
+        terminal = [k for k, j in _jobs.items() if j["status"] in ("done", "error", "cancelled")]
+        for old in terminal[:max(0, len(terminal) - MAX_HISTORY_JOBS + 1)]:
+            _jobs.pop(old, None)
+            _job_args.pop(old, None)
 
         _jobs[key] = {
             "status": "queued",
@@ -298,9 +503,12 @@ def _enqueue(key: str, priority: int, title: str, args: tuple) -> str:
             "total": len(args[2]),
             "priority": priority,
             "title": title,
+            "course": args[0],
+            "updated_at": time.time(),
         }
         _job_args[key] = args
         _queue.append(key)
+        _persist_jobs()
         _cv.notify()
         return "queued"
 
@@ -316,7 +524,8 @@ def _worker() -> None:
                 key=lambda i: (_jobs[_queue[i]].get("priority", PRIORITY_BATCH), i),
             )
             key = _queue.pop(index)
-            args = _job_args.pop(key, None)
+            args = _job_args.get(key)
+            _set_job(key, status="running")
             waiting = len(_queue)
 
         if args is None:
@@ -330,20 +539,35 @@ def _queue_summary() -> dict:
     """What the extension shows while a section is being translated."""
     with _cv:
         running = None
+        running_count = 0
         done = failed = 0
         for job in _jobs.values():
-            if job["status"] == "running":
-                running = {
-                    "title": job.get("title", ""),
-                    "progress": job.get("progress", 0),
-                    "chunks": job.get("chunks", 0),
-                }
+            if job["status"] in ("running", "cancelling"):
+                running_count += 1
+                # One representative for the "now translating: X" line. Several
+                # lectures run at once, so the count beside it is what tells
+                # the real story; `jobs` below lists every one of them.
+                if running is None:
+                    running = {
+                        "title": job.get("title", ""),
+                        "progress": job.get("progress", 0),
+                        "chunks": job.get("chunks", 0),
+                    }
             elif job["status"] == "done":
                 done += 1
             elif job["status"] == "error":
                 failed += 1
         return {
+            "jobs": [
+                {"id": key, **{k: v for k, v in job.items() if k not in ("cues", "cancel_requested")}}
+                for key, job in sorted(_jobs.items(), key=lambda item: (
+                    item[1]["status"] not in ("running", "cancelling", "queued"),
+                    item[1].get("priority", 1) if item[1]["status"] == "queued" else -1,
+                    -item[1].get("updated_at", 0)))
+            ],
             "running": running,
+            "running_count": running_count,
+            "workers": WORKER_COUNT,
             "queued": len(_queue),
             "done": done,
             "failed": failed,
@@ -374,6 +598,7 @@ def _run_job(
     mode: str = "subtitle",
 ) -> None:
     try:
+        _check_cancelled(key)
         _set_job(key, status="running", progress=0, total=len(cues))
         print(f"  แปล: {title} ({len(cues)} บรรทัด) ...", flush=True)
 
@@ -399,6 +624,7 @@ def _run_job(
         partial: dict[int, str] = {}
 
         def publish(_index: int, answer: str) -> None:
+            _check_cancelled(key)
             partial.update(_parse_subtitles(_split_sections(answer).get("SUBTITLES", "")))
             _set_job(key, cues=_render_cues(lesson, partial))
 
@@ -411,25 +637,45 @@ def _run_job(
             by_id.update(_parse_subtitles(sections.get("SUBTITLES", "")))
             terms.extend(_parse_terms(sections.get("TERMS", ""), lesson.slug))
 
-        if not by_id:
-            raise RuntimeError("แปลแล้วแต่อ่านผลลัพธ์ไม่ได้")
+        _check_cancelled(key)
+        missing = [s for s in segments if not by_id.get(s.id)]
+        if missing:
+            _set_job(key, missing=len(missing), phase="repairing")
+            repair = Lesson(slug=key, title=title, course=course, segments=missing)
+            partial.update(by_id)
+            for answer in _translate(repair, glossary, engine, effort, key, mode, publish):
+                sections = _split_sections(answer)
+                # A repair cannot replace already accepted lines.
+                repaired = _parse_subtitles(sections.get("SUBTITLES", ""))
+                by_id.update({s.id: repaired[s.id] for s in missing if repaired.get(s.id)})
+                terms.extend(_parse_terms(sections.get("TERMS", ""), lesson.slug))
+            missing = [s for s in segments if not by_id.get(s.id)]
+            _set_job(key, missing=len(missing), cues=_render_cues(lesson, by_id))
+            if missing:
+                raise RuntimeError(f"คำแปลยังขาด {len(missing)}/{len(segments)} บรรทัดหลังลองซ่อม กดลองใหม่ได้จากคิว")
 
-        for term in terms:
-            glossary.add(term)
-        glossary.save()
-
-        result = _render_cues(lesson, by_id)
-
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / f"{key}.json").write_text(
-            json.dumps(result, ensure_ascii=False), encoding="utf-8"
-        )
-
-        translated = sum(1 for r in result if r["th"])
-        _set_job(key, status="done", cues=result, progress=len(result))
+        with _cv:
+            _check_cancelled(key)
+            # Re-read instead of saving the copy loaded before translating.
+            # That copy is minutes old, and while this lecture was being
+            # translated another worker may have added terms of its own —
+            # writing this snapshot back over them would silently drop them.
+            merged = Glossary(glossary_path)
+            for term in terms:
+                merged.add(term)
+            merged.save()
+            result = _render_cues(lesson, by_id)
+            _atomic_json(cache_dir / f"{key}.json", result)
+            translated = sum(1 for r in result if r["th"])
+            _set_job(key, status="done", cues=result, progress=len(result), missing=0, phase="complete")
         print(f"  เสร็จ: {title} — แปล {translated}/{len(result)} บรรทัด", flush=True)
 
+    except JobCancelled:
+        _set_job(key, status="cancelled")
     except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
+        if _jobs.get(key, {}).get("cancel_requested"):
+            _set_job(key, status="cancelled")
+            return
         traceback.print_exc()
         _set_job(key, status="error", error=str(exc))
 
@@ -515,6 +761,24 @@ def _as_float(value) -> float | None:
         return None
 
 
+def _suppress_windows_error_dialogs() -> None:
+    # A broken native dependency (e.g. a torchaudio built for another torch)
+    # otherwise pops a modal "Entry Point Not Found" box that freezes the
+    # server until someone clicks OK. With SEM_FAILCRITICALERRORS the failure
+    # comes back as an ordinary import error and that engine reports itself
+    # unavailable instead.
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        SEM_FAILCRITICALERRORS = 0x0001
+        SEM_NOOPENFILEERRORBOX = 0x8000
+        ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)
+    except Exception:
+        pass
+
+
 def serve(
     cache_dir: Path,
     glossary_path: Path,
@@ -522,25 +786,35 @@ def serve(
     effort: str = "high",
     port: int = PORT,
 ) -> None:
+    _suppress_windows_error_dialogs()
     _Handler.cache_dir = cache_dir
     _Handler.glossary_path = glossary_path
     _Handler.engine = engine
     _Handler.effort = effort
     _Handler.tts = TtsRegistry(cache_dir)
-
-    threading.Thread(target=_worker, daemon=True, name="udth-worker").start()
-
     server = _Server((HOST, port), _Handler)
+    _restore_jobs(cache_dir, glossary_path)
+    for index in range(WORKER_COUNT):
+        threading.Thread(
+            target=_worker, daemon=True, name=f"udth-worker-{index + 1}"
+        ).start()
     print("=" * 58)
-    print("  Udemy TH — เซิร์ฟเวอร์แปลซับและเสียงพากย์ พร้อมทำงาน")
+    print(f"  ฮองเรียน v{__version__} — เซิร์ฟเวอร์แปลซับและเสียงพากย์ พร้อมทำงาน")
     print("=" * 58)
     print(f"  ที่อยู่ : http://{HOST}:{port}")
-    print(f"  เครื่องมือแปล : {engine}")
+    print(f"  เครื่องมือแปล : {engine} (แปลพร้อมกัน {WORKER_COUNT} บทเรียน)")
     print(f"  แคช   : {cache_dir}")
+    if ENV_LOADED:
+        print(f"  ตั้งค่าจาก : {ENV_PATH} ({', '.join(sorted(ENV_LOADED))})")
+    elif ENV_PATH.exists():
+        print(f"  ตั้งค่าจาก : {ENV_PATH} (ไม่ได้ใช้ค่าใดเลย — ถูกตั้งใน environment อยู่แล้ว)")
     print()
     print("  เปิดหน้าต่างนี้ค้างไว้ระหว่างเรียน แล้วเปิดวิดีโอใน Udemy ได้เลย")
     print("  ปิดด้วย Ctrl+C")
     print("=" * 58, flush=True)
+    # Local voice models load onto the GPU now, not when the first lecture
+    # asks; the server is already answering while this runs.
+    _Handler.tts.preload(os.environ.get("UDTH_PRELOAD", "auto"))
 
     try:
         server.serve_forever()

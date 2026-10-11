@@ -1,6 +1,0 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HongRian — UI verification</title>
-<style>body{margin:16px;background:#eaeaf1;font:14px/1.6 system-ui}nav{display:flex;gap:20px;margin-bottom:12px}iframe{border:1px solid #aaa;background:white;height:812px;max-width:none}a{padding:8px}</style></head><body>
-<nav><strong>ข้อมูลจำลองสำหรับทดสอบหน้าจอ</strong><a href="?width=1024">Desktop 1024</a><a href="?width=375">Mobile 375</a><a href="?width=375&controller=1">Player 375</a><a href="?width=1024&controller=1">Player 1024</a></nav>
-<iframe title="HongRian test viewport"></iframe>
-<script>const params=new URLSearchParams(location.search);const frame=document.querySelector('iframe');frame.style.width=(params.get('width')==='375'?375:1024)+'px';frame.src=params.has('controller')?'controller-frame.html':'workspace-frame.html';</script>
-</body></html>

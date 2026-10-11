@@ -1,89 +1,48 @@
-// Popup: shows whether the local server is up and toggles overlay options.
+// Popup: server status, the same settings as the in-player menu, and actions.
+//
+// Settings are read and written through core/settings.js, the store the page
+// uses too, so the two can never disagree; the page hears each change itself.
+"use strict";
 
-const statusEl = document.getElementById("status");
-const enabledEl = document.getElementById("enabled");
-const dualEl = document.getElementById("dual");
-const dubbingEl = document.getElementById("dubbing");
-const ttsEngineEl = document.getElementById("ttsEngine");
-const voiceEl = document.getElementById("voice");
-const dubbingVolumeEl = document.getElementById("dubbingVolume");
-const originalAudioVolumeEl = document.getElementById("originalAudioVolume");
-const audioSettingsEl = document.getElementById("audioSettings");
-const dubbingValueEl = document.getElementById("dubbingValue");
-const originalAudioValueEl = document.getElementById("originalAudioValue");
-const retryEl = document.getElementById("retry");
-const sectionEl = document.getElementById("section");
-const hintEl = document.getElementById("hint");
-const managerEl = document.getElementById("manager");
-const queueEl = document.getElementById("queue");
-const queueTitleEl = document.getElementById("queueTitle");
-const queueDetailEl = document.getElementById("queueDetail");
-const queueFillEl = document.getElementById("queueFill");
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+const hintEl = $("hint");
+const enabledEl = $("enabled");
+const dualEl = $("dual");
+const dubbingEl = $("dubbing");
+const audioSettingsEl = $("audioSettings");
+const ttsEngineEl = $("ttsEngine");
+const voiceEl = $("voice");
+const startFieldEl = $("startField");
+const startHintEl = $("startHint");
+const dubbingVolumeEl = $("dubbingVolume");
+const originalAudioVolumeEl = $("originalAudioVolume");
+const dubbingValueEl = $("dubbingValue");
+const originalAudioValueEl = $("originalAudioValue");
+const sectionEl = $("section");
+const retryEl = $("retry");
+const queueEl = $("queue");
+const queueTitleEl = $("queueTitle");
+const queueDetailEl = $("queueDetail");
+const queueFillEl = $("queueFill");
 
-// Peak queue length seen while this popup is open, so the bar has something to
-// measure against — the server only reports what is still waiting.
+const store = UDTH.settings.createSettingsStore({ area: chrome.storage.local, onChanged: chrome.storage.onChanged });
+const api = UDTH.api.createApi((message) => chrome.runtime.sendMessage(message));
+const BROWSER_ENGINE = { name: "windows", label: "Windows (เสียงในเบราว์เซอร์)", ready: true, translates: false, voices: [] };
+const VIDEO_PAGE = /https:\/\/(www\.)?(udemy\.com\/course\/|youtube\.com\/(watch|shorts))/;
+
+let engines = [];
 let queuePeak = 0;
-let knownNativeVoices = [];
+let queueBusy = false;
 
-function syncAudioControls() {
-  audioSettingsEl.hidden = !dubbingEl.checked;
-  dubbingValueEl.value = `${Math.round(Number(dubbingVolumeEl.value) * 100)}%`;
-  originalAudioValueEl.value = `${Math.round(Number(originalAudioVolumeEl.value) * 100)}%`;
-}
+const catalogue = () => [BROWSER_ENGINE, ...engines];
+const engineByName = (name) => catalogue().find((e) => e.name === name);
 
-// The browser's own voices are one engine among several; the rest are read
-// from the server, so installing a new speech engine there is enough to make
-// it appear here.
-const BROWSER_ENGINE = {
-  name: "windows",
-  label: "Windows Natural (ในเบราว์เซอร์)",
-  ready: true,
-  voices: [],
-};
-let serverEngines = [];
-
-function allEngines() {
-  return [BROWSER_ENGINE, ...serverEngines];
-}
-
-function fillEngineOptions(selected) {
-  ttsEngineEl.innerHTML = "";
-  for (const engine of allEngines()) {
-    // Listed with its reason when unusable rather than hidden, so a supported
-    // option never looks like it does not exist.
-    const suffix = engine.ready ? "" : " — ยังตั้งค่าไม่ครบ";
-    ttsEngineEl.add(new Option(engine.label + suffix, engine.name));
-  }
-  // The saved engine may not be in the catalogue — stored before the server was
-  // restarted, or the server is down. Keep it rather than showing a blank box.
-  if (![...ttsEngineEl.options].some((o) => o.value === selected)) {
-    ttsEngineEl.add(new Option(`${selected} — ยังไม่พร้อมใช้`, selected));
-  }
-  ttsEngineEl.value = selected;
-}
-
-function fillVoiceOptions(engineName, nativeVoices, selected) {
-  const engine = allEngines().find((e) => e.name === engineName) || BROWSER_ENGINE;
-  const voices =
-    engineName === "windows"
-      ? (nativeVoices || []).map((voice) => ({ id: voice.name, label: voice.name }))
-      : engine.voices || [];
-
-  voiceEl.innerHTML = "";
-  if (!voices.length) {
-    voiceEl.add(
-      new Option(
-        engineName === "windows"
-          ? "เลือกอัตโนมัติ (รอ Windows โหลดเสียง)"
-          : "เครื่องมือนี้ยังใช้ไม่ได้",
-        ""
-      )
-    );
-  } else {
-    voices.forEach((voice) => voiceEl.add(new Option(voice.label, voice.id)));
-  }
-  if ([...voiceEl.options].some((option) => option.value === selected)) voiceEl.value = selected;
-  else if (voiceEl.options.length) voiceEl.selectedIndex = 0;
+function browserVoices() {
+  return speechSynthesis
+    .getVoices()
+    .filter((v) => /^th(?:-|_)/i.test(v.lang))
+    .map((v) => ({ id: v.name, label: v.name }));
 }
 
 async function activeTab() {
@@ -91,76 +50,95 @@ async function activeTab() {
   return tab;
 }
 
-async function refresh() {
-  let health;
-  try {
-    health = await withTimeout(chrome.runtime.sendMessage({ type: "health" }));
-  } catch (error) {
-    health = { ok: false, error: error.message };
+function fill(select, options, selected) {
+  select.textContent = "";
+  for (const o of options) select.add(new Option(o.label, o.value));
+  select.value = options.some((o) => o.value === selected) ? selected : options.length ? options[0].value : "";
+}
+
+function render(settings) {
+  const dub = settings.dub;
+  enabledEl.checked = settings.subtitles !== "off";
+  dualEl.checked = settings.subtitles === "both";
+  dualEl.disabled = settings.subtitles === "off";
+  dubbingEl.checked = dub.on;
+  audioSettingsEl.hidden = !dub.on;
+
+  const engineOptions = catalogue().map((e) => ({ value: e.name, label: e.ready ? e.label : `${e.label} (ยังไม่พร้อม)` }));
+  if (!engineByName(dub.engine)) engineOptions.push({ value: dub.engine, label: `${dub.engine} (ยังไม่พร้อม)` });
+  fill(ttsEngineEl, engineOptions, dub.engine);
+
+  const engine = engineByName(dub.engine);
+  const voices = dub.engine === "windows" ? browserVoices() : (engine && engine.voices) || [];
+  fill(voiceEl, voices.length ? voices.map((v) => ({ value: v.id, label: v.label })) : [{ value: "", label: "เลือกอัตโนมัติ" }], dub.voice);
+
+  startFieldEl.hidden = !(engine && engine.translates);
+  for (const button of startFieldEl.querySelectorAll("[data-start]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.start === dub.start));
   }
+  startHintEl.textContent =
+    dub.start === "instant"
+      ? "เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ"
+      : "รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ ศัพท์เทคนิคแม่นที่สุด";
 
-  if (health && health.ok) {
-    serverEngines = health.voices || [];
-    statusEl.className = "status ok";
-    statusEl.textContent = `เซิร์ฟเวอร์ทำงานอยู่ (${health.engine})`;
-    hintEl.textContent = "เปิดวิดีโอใน Udemy หรือ YouTube ได้เลย ครั้งแรกของแต่ละบทจะใช้เวลาแปลสักครู่";
-  } else {
-    statusEl.className = "status";
-    statusEl.textContent = "ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
-    hintEl.innerHTML =
-      "ดับเบิลคลิก <code>start-server.cmd</code> ในโฟลเดอร์โปรเจกต์ แล้วเปิดหน้านี้ใหม่";
-  }
+  dubbingVolumeEl.value = String(dub.volume);
+  dubbingValueEl.value = `${Math.round(dub.volume * 100)}%`;
+  originalAudioVolumeEl.value = String(dub.sourceVolume);
+  originalAudioValueEl.value = `${Math.round(dub.sourceVolume * 100)}%`;
+}
 
-  const tab = await activeTab();
-  const url = (tab && tab.url) || "";
-  const onUdemy = url.includes("udemy.com/course/");
-  const onVideoPage = onUdemy || /youtube\.com\/(watch|shorts)/.test(url);
-  // Pre-translating a whole section is a Udemy idea; YouTube has no curriculum
-  // to walk. And nothing can be queued at all while the server is down.
-  sectionEl.disabled = !onUdemy || !(health && health.ok);
+function setStatus(text, ok) {
+  statusEl.className = ok ? "status ok" : "status";
+  statusEl.textContent = text;
+}
 
-  if (!onVideoPage) return;
-
+async function refreshServer() {
+  const mine = chrome.runtime.getManifest().version;
   try {
-    const state = await withTimeout(chrome.tabs.sendMessage(tab.id, { type: "getState" }), 2500);
-    if (state) {
-      enabledEl.checked = state.enabled;
-      dualEl.checked = state.dualMode;
-      dubbingEl.checked = Boolean(state.dubbingEnabled);
-      knownNativeVoices = state.nativeVoices || [];
-      fillEngineOptions(state.ttsEngine || "edge");
-      fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, state.ttsVoice);
-      dubbingVolumeEl.value = String(state.dubbingVolume ?? 1);
-      originalAudioVolumeEl.value = String(state.originalAudioVolume ?? 0.15);
-      syncAudioControls();
-      if (health && health.ok && state.status === "ready") {
-        const engine = allEngines().find((e) => e.name === state.ttsEngine);
-        if (!state.dubbingEnabled) {
-          statusEl.textContent = `พร้อมแล้ว — ซับไทย ${state.count} บรรทัด`;
-        } else if (engine && !engine.ready) {
-          statusEl.className = "status";
-          statusEl.textContent = `${engine.label} ยังไม่พร้อม — ${engine.error}`;
-        } else if (state.ttsEngine === "windows") {
-          statusEl.textContent = "Windows Natural พร้อมพากย์ไทย";
-        } else {
-          const cached = state.audioCached || 0;
-          const pending = state.audioPending || 0;
-          const name = engine ? engine.label : state.ttsEngine;
-          statusEl.textContent = pending
-            ? `${name}: พร้อม ${cached} ประโยค · กำลังเตรียม ${pending}`
-            : `${name}: พร้อมเสียง ${cached} ประโยค`;
-        }
-      }
+    const health = await api.health();
+    engines = health.engines;
+    if (health.version && health.version !== mine) {
+      setStatus(`เซิร์ฟเวอร์เป็นเวอร์ชัน ${health.version} ส่วนขยายเป็น ${mine} ปิดแล้วเปิด start-server.cmd ใหม่`, false);
+    } else if (!health.version) {
+      setStatus("เซิร์ฟเวอร์เป็นเวอร์ชันเก่า ปิดแล้วเปิด start-server.cmd ใหม่", false);
+    } else {
+      setStatus("เซิร์ฟเวอร์พร้อมทำงาน", true);
     }
-  } catch {
-    // Content script not loaded on this page — nothing to sync.
+    hintEl.textContent = "เปิดวิดีโอใน Udemy หรือ YouTube ได้เลย ครั้งแรกของแต่ละบทจะใช้เวลาแปลสักครู่";
+  } catch (error) {
+    engines = [];
+    setStatus(error.message, false);
+    hintEl.innerHTML = "ดับเบิลคลิก <code>start-server.cmd</code> ในโฟลเดอร์โปรเจกต์ แล้วเปิดหน้านี้ใหม่";
   }
 }
 
-// How many lectures are being translated right now. The server runs several
-// at once, so the old "is there a running job? then 1" undercounted as soon
-// as more than one was in flight. `running_count` is missing on an older
-// server, where the presence of `running` is still the best answer available.
+// What the lecture in the active tab is doing, in one line.
+async function refreshLecture() {
+  const tab = await activeTab();
+  const onVideoPage = Boolean(tab && VIDEO_PAGE.test(tab.url || ""));
+  const onUdemy = Boolean(tab && /udemy\.com\/course\//.test(tab.url || ""));
+  sectionEl.disabled = !onUdemy || !engines.length;
+  if (!onVideoPage) return;
+  let state;
+  try {
+    state = await chrome.tabs.sendMessage(tab.id, { type: "getState" });
+  } catch {
+    hintEl.textContent = "หน้าวิดีโอนี้ยังไม่มีส่วนขยายทำงาน กด F5 รีเฟรชหน้าวิดีโอหนึ่งครั้ง";
+    return;
+  }
+  if (!state || !engines.length) return;
+  const lang = state.sourceLang ? `${state.sourceLang.split("-")[0]} → ไทย` : "";
+  if (state.phase === "playing") {
+    setStatus(state.translating ? `กำลังเล่น ${lang} · ส่วนที่เหลือกำลังแปล` : `กำลังเล่น ${lang} · แปลครบแล้ว`, true);
+  } else if (state.phase === "waiting") {
+    setStatus(`กำลังเตรียมบทนี้ ${lang}`, true);
+  } else if (state.phase === "error") {
+    setStatus(state.message, false);
+  }
+}
+
+// How many lectures are being translated right now. `running_count` is missing
+// on an older server, where the presence of `running` is the best answer.
 function runningCount(info) {
   if (typeof info.running_count === "number") return info.running_count;
   return info.running ? 1 : 0;
@@ -171,19 +149,16 @@ async function refreshQueue() {
   queueBusy = true;
   let info = null;
   try {
-    const res = await withTimeout(chrome.runtime.sendMessage({ type: "queueStatus" }));
-    if (res && res.ok) info = res.data;
+    info = await api.queue();
   } catch {
-    /* server or worker unreachable — leave the panel as it is */
+    /* server unreachable: leave the panel as it is */
   } finally {
     queueBusy = false;
   }
-
   if (!info) {
     queueEl.style.display = "none";
     return;
   }
-
   const left = (info.queued || 0) + runningCount(info);
   if (!left) {
     // Only worth reporting a finished queue if this popup watched it run.
@@ -192,14 +167,11 @@ async function refreshQueue() {
       return;
     }
     queueEl.style.display = "";
-    queueTitleEl.textContent = info.failed
-      ? `แปลล่วงหน้าเสร็จ — พลาด ${info.failed} บทเรียน`
-      : "แปลล่วงหน้าเสร็จแล้ว";
+    queueTitleEl.textContent = info.failed ? `แปลล่วงหน้าเสร็จ พลาด ${info.failed} บทเรียน` : "แปลล่วงหน้าเสร็จแล้ว";
     queueDetailEl.textContent = "";
     queueFillEl.style.width = "100%";
     return;
   }
-
   queuePeak = Math.max(queuePeak, left);
   const done = queuePeak - left;
   queueEl.style.display = "";
@@ -208,125 +180,70 @@ async function refreshQueue() {
   queueFillEl.style.width = `${(done / queuePeak) * 100}%`;
 }
 
-async function pushOptions() {
-  const options = {
-    enabled: enabledEl.checked,
-    dualMode: dualEl.checked,
-    dubbingEnabled: dubbingEl.checked,
-    ttsEngine: ttsEngineEl.value,
-    ttsVoice: voiceEl.value,
-    dubbingVolume: Number(dubbingVolumeEl.value),
-    originalAudioVolume: Number(originalAudioVolumeEl.value),
-  };
-  await chrome.storage.local.set(options);
-  const tab = await activeTab();
-  if (!tab) return;
-  chrome.tabs.sendMessage(tab.id, { type: "setOptions", ...options }).catch(() => {});
-}
+// ------------------------------------------------------------------ inputs
 
-enabledEl.addEventListener("change", pushOptions);
-dualEl.addEventListener("change", pushOptions);
-dubbingEl.addEventListener("change", pushOptions);
-dubbingEl.addEventListener("change", syncAudioControls);
-ttsEngineEl.addEventListener("change", () => {
-  fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, "");
-  pushOptions();
-});
-voiceEl.addEventListener("change", pushOptions);
-dubbingVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
-originalAudioVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
+enabledEl.addEventListener("change", () =>
+  store.save({ subtitles: enabledEl.checked ? (dualEl.checked ? "both" : "th") : "off" })
+);
+dualEl.addEventListener("change", () => store.save({ subtitles: dualEl.checked ? "both" : "th" }));
+dubbingEl.addEventListener("change", () => store.save({ dub: { on: dubbingEl.checked } }));
+ttsEngineEl.addEventListener("change", () => store.save({ dub: { engine: ttsEngineEl.value } }));
+voiceEl.addEventListener("change", () => store.save({ dub: { voice: voiceEl.value } }));
+dubbingVolumeEl.addEventListener("input", () => store.save({ dub: { volume: Number(dubbingVolumeEl.value) } }));
+originalAudioVolumeEl.addEventListener("input", () =>
+  store.save({ dub: { sourceVolume: Number(originalAudioVolumeEl.value) } })
+);
+for (const button of startFieldEl.querySelectorAll("[data-start]")) {
+  button.addEventListener("click", () => store.save({ dub: { start: button.dataset.start } }));
+}
 
 retryEl.addEventListener("click", async () => {
   const tab = await activeTab();
   if (!tab || !tab.url) return;
-
-  // Reloading wipes the content script's memory, so the "ignore the cache"
-  // request has to be left somewhere that survives — keyed by lecture so it
-  // can't leak into a different one.
+  // Reloading wipes the page's memory, so "ignore the cache" is left in
+  // storage, keyed by lecture so it cannot leak into a different one.
   const lecture =
     (tab.url.match(/\/learn\/lecture\/(\d+)/) || [])[1] ||
-    (tab.url.match(/[?&]v=([\w-]+)/) || [])[1];
+    (tab.url.match(/[?&]v=([\w-]{11})/) || [])[1] ||
+    (tab.url.match(/\/shorts\/([\w-]{11})/) || [])[1];
   if (lecture) await chrome.storage.local.set({ forceLecture: lecture });
-
-  await chrome.tabs.sendMessage(tab.id, { type: "retranslate" }).catch(() => {});
   chrome.tabs.reload(tab.id);
-  window.close();
-});
-
-// The queue page is an extension page, so it opens in a tab of its own rather
-// than in this popup — it is a place to read history, not a control you reach
-// for mid-sentence.
-managerEl.addEventListener("click", () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL("manager.html") });
   window.close();
 });
 
 sectionEl.addEventListener("click", async () => {
   const tab = await activeTab();
   if (!tab) return;
-
   sectionEl.disabled = true;
-  const original = sectionEl.textContent;
-  sectionEl.textContent = "กำลังเตรียมคิว ...";
-
+  const original = sectionEl.lastChild.textContent;
+  sectionEl.lastChild.textContent = "กำลังเตรียมคิว ...";
   try {
-    // The content script answers immediately and keeps gathering in the
-    // background, so closing this popup does not cancel anything.
+    // The page answers immediately and keeps gathering in the background, so
+    // closing this popup does not cancel anything.
     const res = await chrome.tabs.sendMessage(tab.id, { type: "translateSection" });
     if (res && res.ok) {
-      sectionEl.textContent = "ส่งเข้าคิวแล้ว";
-      hintEl.textContent =
-        "ดูความคืบหน้าได้ที่มุมซ้ายล่างของหน้า Udemy — เปลี่ยนบทเรียนระหว่างนี้ได้";
-    } else {
-      sectionEl.disabled = false;
-      sectionEl.textContent = original;
-      statusEl.className = "status";
-      statusEl.textContent = (res && res.error) || "สั่งแปลทั้ง Section ไม่สำเร็จ";
+      sectionEl.lastChild.textContent = "ส่งเข้าคิวแล้ว";
+      hintEl.textContent = "ดูความคืบหน้าได้ที่มุมซ้ายล่างของหน้า Udemy เปลี่ยนบทเรียนระหว่างนี้ได้";
+      return;
     }
+    setStatus((res && res.error) || "สั่งแปลทั้ง Section ไม่สำเร็จ", false);
   } catch {
-    sectionEl.disabled = false;
-    sectionEl.textContent = original;
-    statusEl.className = "status";
-    statusEl.textContent = "หน้านี้ยังไม่พร้อม — กด F5 รีเฟรชหน้า Udemy หนึ่งครั้ง";
+    setStatus("หน้านี้ยังไม่พร้อม กด F5 รีเฟรชหน้า Udemy หนึ่งครั้ง", false);
   }
+  sectionEl.disabled = false;
+  sectionEl.lastChild.textContent = original;
 });
 
-const popupPages = ["learning", "audio", "usage"];
-function selectPopupPage(selected, focus = false) {
-  for (const page of popupPages) {
-    const tab = document.getElementById(`tab-${page}`);
-    const active = page === selected;
-    tab.setAttribute("aria-selected", String(active));
-    tab.tabIndex = active ? 0 : -1;
-    document.getElementById(`page-${page}`).hidden = !active;
-    if (active && focus) tab.focus();
-  }
-}
-for (const [index, page] of popupPages.entries()) {
-  const tab = document.getElementById(`tab-${page}`);
-  tab.addEventListener("click", () => selectPopupPage(page));
-  tab.addEventListener("keydown", event => {
-    const target = event.key === "ArrowRight" ? (index + 1) % 3
-      : event.key === "ArrowLeft" ? (index + 2) % 3
-      : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
-    if (target < 0) return;
-    event.preventDefault();
-    selectPopupPage(popupPages[target], true);
-  });
-}
-document.getElementById("openAudio").addEventListener("click", () => selectPopupPage("audio", true));
-selectPopupPage("learning");
-fillEngineOptions("edge");
-fillVoiceOptions("edge", [], "");
-syncAudioControls();
-loadSettings().catch(() => {
-  hintEl.textContent = "โหลดค่าที่บันทึกไว้ไม่ได้ ลองเปิดหน้าต่างนี้ใหม่";
+// ------------------------------------------------------------------ start
+
+document.querySelector(".version").textContent = `v${chrome.runtime.getManifest().version}`;
+speechSynthesis.addEventListener("voiceschanged", () => store.get() && render(store.get()));
+store.subscribe(render);
+store.load().then(async (settings) => {
+  render(settings);
+  await refreshServer();
+  render(store.get());
+  refreshLecture();
 });
-refresh();
 refreshQueue();
 setInterval(refreshQueue, 2000);
-
-(() => {
-  const el = document.querySelector(".version");
-  if (el) el.textContent = `v${chrome.runtime.getManifest().version}`;
-})();

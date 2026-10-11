@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "ฮองเรียน — HongRian",
-  "version": "0.8.9",
+  "version": "1.0.0",
   "description": "ซับไทยและเสียงพากย์ไทยด้วย AI บนวิดีโอ Udemy และ YouTube",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -26,14 +30,34 @@
         "https://www.youtube.com/watch*",
         "https://www.youtube.com/shorts/*"
       ],
-      "js": ["sites.js", "content.js"],
-      "css": ["overlay.css"],
+      "js": [
+        "sites.js",
+        "sites/udemy.js",
+        "core/timeline.js",
+        "core/settings.js",
+        "core/api.js",
+        "pipeline/dubber.js",
+        "pipeline/voices.js",
+        "pipeline/session.js",
+        "ui/overlay.js",
+        "ui/gate.js",
+        "ui/menu.js",
+        "modes/udemy-pages.js",
+        "main.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     },
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["pot-interceptor.js"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "pot-interceptor.js"
+      ],
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": false

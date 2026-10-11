@@ -1,0 +1,20 @@
+# เสียงพากย์ AI บนการ์ดจอ NVIDIA (SeamlessM4T v2 / OmniVoice) — ไม่บังคับ
+#
+# อย่าติดตั้งไฟล์นี้ตรงๆ ด้วย pip — ให้ install.cmd ทำให้
+#
+# เหตุผล: torch กับ torchaudio ต้องเป็นเวอร์ชันคู่กันพอดี ถ้า pip ติดตั้ง
+# omnivoice เฉยๆ มันจะดึง torchaudio รุ่นล่าสุดจาก PyPI มาทับ ซึ่งไม่เข้ากับ
+# torch รุ่น CUDA ที่มีอยู่ แล้วพังตอนโหลดด้วยข้อความ
+#   "The procedure entry point torch_library_impl could not be located"
+# install.cmd จึงติดตั้ง torch + torchaudio จาก index ของ PyTorch ก่อน แล้วล็อก
+# สองตัวนั้นไว้ (constraints) ตอนติดตั้งรายการข้างล่าง
+#
+# ติดตั้งมือ (ถ้าจำเป็น):
+#   python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+#   python -c "import torch,torchaudio;print(f'torch=={torch.__version__}\ntorchaudio=={torchaudio.__version__}')" > gpu-pins.txt
+#   python -m pip install -r requirements-gpu.txt -c gpu-pins.txt
+transformers>=4.40.0
+soundfile>=0.12.1
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+omnivoice>=0.0.1

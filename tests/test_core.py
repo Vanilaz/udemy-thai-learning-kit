@@ -154,6 +154,9 @@ class ServerTests(unittest.TestCase):
     def call(self, path, body=None, origin=None):
         data = None if body is None else json.dumps(body).encode("utf-8")
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=data)
+        # The extension always posts JSON; the server refuses anything else.
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
         if origin:
             req.add_header("Origin", origin)
         try:
@@ -177,7 +180,8 @@ class ServerTests(unittest.TestCase):
         self.assertIn("error", body)
 
     def test_cache_hit_returns_cues_without_running_a_job(self):
-        cues = [{"start": 0, "text": "hello"}]
+        # The shape the extension sends: every cue carries start, end and text.
+        cues = [{"start": 0, "end": 1, "text": "hello"}]
         key = server._cache_key("c", "lec\x00subtitle", cues)
         stored = [{"start": 0, "end": 1, "en": "hello", "th": "สวัสดี"}]
         (server._Handler.cache_dir / f"{key}.json").write_text(
@@ -201,10 +205,11 @@ class ServerTests(unittest.TestCase):
 
     def test_extension_origin_is_allowed_and_echoed(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}/health")
-        req.add_header("Origin", "chrome-extension://abcdef")
+        # A real extension id: 32 letters a-p, the only shape Chrome issues.
+        req.add_header("Origin", "chrome-extension://abcdefghijklmnopabcdefghijklmnop")
         with urllib.request.urlopen(req, timeout=10) as r:
             self.assertEqual(r.status, 200)
-            self.assertEqual(r.headers["Access-Control-Allow-Origin"], "chrome-extension://abcdef")
+            self.assertEqual(r.headers["Access-Control-Allow-Origin"], "chrome-extension://abcdefghijklmnopabcdefghijklmnop")
 
     def test_dns_rebinding_host_is_refused(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}/health")
@@ -215,7 +220,8 @@ class ServerTests(unittest.TestCase):
 
     def test_malformed_json(self):
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}/translate", data=b"{not json", method="POST"
+            f"http://127.0.0.1:{self.port}/translate", data=b"{not json", method="POST",
+            headers={"Content-Type": "application/json"},
         )
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(req, timeout=10)
