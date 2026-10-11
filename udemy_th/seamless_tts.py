@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .google_tts import TtsError
 
-MODEL_ID = os.environ.get("UDTH_SEAMLESS_MODEL", "facebook/seamless-m4t-v2-large")
+MODEL_ID = os.environ.get("UDTH_SEAMLESS_MODEL", "facebook/hf-seamless-m4t-medium")
 SAMPLE_RATE = 16000
 
 VOICES = {
@@ -71,14 +71,14 @@ class SeamlessTts:
 
         try:
             import torch
-            from transformers import AutoProcessor, SeamlessM4Tv2Model
+            from transformers import AutoProcessor, SeamlessM4TModel
 
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
             dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
             print(f"[SeamlessM4T] กำลังโหลดโมเดล {MODEL_ID} ลงบน {device} ({dtype})...")
             self._processor = AutoProcessor.from_pretrained(MODEL_ID)
-            self._model = SeamlessM4Tv2Model.from_pretrained(
+            self._model = SeamlessM4TModel.from_pretrained(
                 MODEL_ID,
                 torch_dtype=dtype,
             ).to(device)
@@ -123,7 +123,7 @@ class SeamlessTts:
                         generate_speech=True,
                     )
 
-                audio_tensor = output[0].cpu().squeeze()
+                audio_tensor = output[0].cpu().squeeze().to(torch.float32)
                 audio_np = audio_tensor.numpy()
 
                 # Save directly as wav/mp3 using soundfile

@@ -64,11 +64,18 @@ class OmniVoiceTts:
         try:
             self._imports()
         except TtsError as exc:
-            return {"configured": False, "error": str(exc)}
+            return {"configured": False, "error": str(exc), "voices": []}
         return {
             "configured": True,
-            "voice": "omnivoice:male",
+            "ready": True,
+            "error": "",
             "unlimited": True,
+            "used": None,
+            "limit": None,
+            "voices": [
+                {"id": k, "label": v}
+                for k, v in VOICES.items()
+            ],
             "loaded": self._model is not None,
             "cloning": bool(self.reference),
         }
@@ -122,7 +129,11 @@ class OmniVoiceTts:
         omnivoice, _, _ = self._imports()
         print(f"  กำลังโหลดโมเดล OmniVoice ({MODEL_ID}) ครั้งแรก ...", flush=True)
         try:
-            self._model = omnivoice.OmniVoice.from_pretrained(MODEL_ID)
+            import torch
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            self._model = omnivoice.OmniVoice.from_pretrained(MODEL_ID).to(device)
+            if hasattr(self._model, "audio_tokenizer") and self._model.audio_tokenizer is not None:
+                self._model.audio_tokenizer = self._model.audio_tokenizer.to(device)
         except Exception as exc:
             raise TtsError(f"โหลดโมเดล OmniVoice ไม่สำเร็จ: {exc}") from exc
         print("  โหลดโมเดลเสร็จแล้ว", flush=True)
@@ -136,9 +147,16 @@ class OmniVoiceTts:
             samples = samples[0]
         # Written to a temporary name first: a half-written file left behind by
         # a crash would otherwise look like a valid cache hit forever after.
-        partial = output.with_name(output.name + ".part")
-        sf.write(str(partial), samples, SAMPLE_RATE)
-        partial.replace(output)
+        partial = output.with_name(output.name + ".part.wav")
+        try:
+            sf.write(str(partial), samples, SAMPLE_RATE, format="WAV")
+            partial.replace(output)
+        finally:
+            if partial.is_file():
+                try:
+                    partial.unlink()
+                except OSError:
+                    pass
 
     @staticmethod
     def _imports():
