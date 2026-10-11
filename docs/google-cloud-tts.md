@@ -2,43 +2,14 @@
 
 1. สร้าง Google Cloud project และเปิด **Cloud Text-to-Speech API**
 2. สร้าง service account ที่มีสิทธิ์ใช้งาน Text-to-Speech แล้วดาวน์โหลด JSON key
-3. เก็บ JSON key ไว้นอกโฟลเดอร์โปรเจกต์ แล้วชี้ทางให้เซิร์ฟเวอร์เจอ
+3. เก็บ JSON key ไว้นอกโฟลเดอร์โปรเจกต์ แล้วตั้ง environment variable ใน Command Prompt:
 
-   **วิธีที่แนะนำ — ไฟล์ `.env`** คัดลอก `.env.example` เป็น `.env` ที่โฟลเดอร์บนสุด
-   แล้วใส่บรรทัดเดียว:
-
-   ```ini
-   GOOGLE_APPLICATION_CREDENTIALS=C:\secure\google-tts-key.json
+   ```cmd
+   set GOOGLE_APPLICATION_CREDENTIALS=C:\secure\google-tts-key.json
    ```
 
-   ใส่ path ของ Windows ได้ตรง ๆ ไม่ต้อง escape backslash และชี้ไปที่ *โฟลเดอร์*
-   ที่เก็บ key ก็ได้ เผื่อวันหลังดาวน์โหลด key ใหม่แล้วชื่อไฟล์เปลี่ยน
-   `.env` อยู่ใน `.gitignore` แล้ว จะไม่ถูก commit
-
-   เปิด `start-server.cmd` ใหม่ แล้วดูบรรทัด `ตั้งค่าจาก :` บน banner
-   ถ้าไม่ขึ้นชื่อ `GOOGLE_APPLICATION_CREDENTIALS` แปลว่าไฟล์ยังไม่ถูกอ่าน
-
-   <details>
-   <summary>ทำไมไม่ใช้ environment variable ของ Windows</summary>
-
-   ใช้ได้เหมือนกัน แต่พลาดง่ายมากทั้งสองแบบ:
-
-   - `set GOOGLE_APPLICATION_CREDENTIALS=...` เขียนค่าลงเฉพาะหน้าต่าง Command Prompt
-     นั้นกับโปรแกรมที่หน้าต่างนั้นเปิดต่อ **ปิดหน้าต่างแล้วค่าหาย**
-   - `setx GOOGLE_APPLICATION_CREDENTIALS "..."` เขียนถาวร แต่ Windows ส่งมอบ
-     environment ให้โปรแกรมตอนสร้าง process **หน้าต่างที่เปิดค้างไว้ก่อน `setx`
-     จะไม่มีวันเห็นค่านี้** ต้องปิดทิ้งแล้วเปิดใหม่
-
-   เวลาพลาด ทั้งสองแบบให้ผลหน้าตาเหมือน "ยังไม่เคยตั้งค่า" ทุกประการ
-   (เซิร์ฟเวอร์จะพยายามบอกให้ถ้าตรวจเจอกรณีที่สอง)
-   ถ้าตัวแปรถูกตั้งไว้ใน environment จริงอยู่แล้ว ค่านั้นจะชนะไฟล์ `.env` เสมอ
-
-   </details>
-
-   **อีกวิธี** วางไฟล์ไว้ที่โฟลเดอร์บนสุดของโปรเจกต์แล้วตั้งชื่อว่า `google-key.json`
-   ไม่ต้องตั้งค่าอะไรเลย (`.gitignore` กัน `google-key.json`, `*-key.json`
-   และ `*service-account*.json` ไว้แล้ว)
-
+   หากต้องการให้ใช้งานทุกครั้ง ให้ตั้งตัวแปรนี้ใน Windows Environment Variables
+   แล้วเปิด `start-server.cmd` ใหม่
 4. ติดตั้ง dependency หนึ่งครั้ง:
 
    ```cmd

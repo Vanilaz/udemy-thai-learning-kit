@@ -113,12 +113,10 @@ def translate_text(
     # took four times as long for no reason — the wait was process startup and
     # model latency repeated, not work that had to be ordered.
     #
-    # This is separate from how many *lectures* run at once (UDTH_WORKERS in
-    # server.py). Splitting one lecture turned out not to help at all —
-    # measured 23.7s serial against 24.3s across three chunks — because most
-    # of a run is a fixed ~10.5s toll inside `agy` that splitting multiplies
-    # rather than shares. Real lectures pack into a single chunk anyway, so
-    # this path almost never runs; it exists for the rare oversized one.
+    # Whole *lectures* still run one at a time (see server.py): that queue
+    # exists to stop a batch spawning a dozen agy processes and to keep the
+    # shared glossary file from being written concurrently. Neither applies
+    # inside a single lecture.
     if len(chunks) > 1 and MAX_PARALLEL_CHUNKS > 1:
         return _translate_parallel(
             agy, lesson, chunks, glossary_block, effort, model, on_progress, mode, on_chunk

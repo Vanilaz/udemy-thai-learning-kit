@@ -46,19 +46,6 @@ MAX_REQUEST_BYTES = 5_000
 # 14-second ceiling and the Thai for that lands well over the limit.
 CHIRP_MAX_BYTES = 800
 
-# What to tell someone who has no credentials at all.  Names `setx` rather
-# than `set` on purpose: `set` writes the variable into one Command Prompt and
-# its children only, so a server launched from Explorer or a second window
-# never sees it — which looks exactly like never having set it up, and is the
-# single commonest way this ends up unconfigured.
-NO_CREDENTIALS_HINT = (
-    "ยังไม่ได้ตั้งค่า Google Cloud credentials — วิธีที่ง่ายที่สุดคือสร้างไฟล์ .env "
-    "ที่โฟลเดอร์บนสุดของโปรเจกต์ แล้วใส่บรรทัด GOOGLE_APPLICATION_CREDENTIALS=C:\\path\\to\\key.json "
-    "จากนั้นเปิด start-server.cmd ใหม่ (คัดลอกตัวอย่างได้จาก .env.example) "
-    "หรือจะวางไฟล์ key ไว้ที่ google-key.json ในโฟลเดอร์โปรเจกต์เลยก็ได้ "
-    "ดู docs/google-cloud-tts.md"
-)
-
 # Thai vowels and tone marks are separate code points that attach to the
 # consonant before them.  Cutting between the two corrupts the syllable, so a
 # hard split has to back up past them.
@@ -141,12 +128,6 @@ class GoogleTts:
     label = "Google Chirp 3 HD"
     voices = VOICES
 
-    # A built client, reused across requests. Class-level because
-    # _client_and_types() is a classmethod and the key is the same for every
-    # instance; see there for why it is worth caching at all.
-    _client_cache: tuple | None = None
-    _client_lock = threading.Lock()
-
     def __init__(self, cache_dir: Path, monthly_limit: int | None = None):
         self.cache_dir = cache_dir / "audio"
         self.usage_path = self.cache_dir / "usage.json"
@@ -175,17 +156,14 @@ class GoogleTts:
                         "— ชี้ไปที่ไฟล์ใหม่ หรือชี้ไปที่โฟลเดอร์ที่เก็บ key ก็ได้"
                     ),
                 }
-            stale = self._persisted_but_unseen()
-            if stale:
-                return {
-                    "configured": False,
-                    "error": (
-                        f"ตั้ง {stale} ไว้ถาวรเรียบร้อยแล้ว แต่หน้าต่างที่เปิดเซิร์ฟเวอร์นี้"
-                        "ถูกเปิดไว้ก่อน setx จึงยังไม่ได้รับค่า — ปิดหน้าต่าง start-server.cmd "
-                        "ทิ้งแล้วเปิดใหม่อีกครั้ง ไม่ต้องตั้งค่าอะไรเพิ่ม"
-                    ),
-                }
-            return {"configured": False, "error": NO_CREDENTIALS_HINT}
+            return {
+                "configured": False,
+                "error": (
+                    "ยังไม่ได้ตั้งค่า Google Cloud credentials — วางไฟล์ key ไว้ที่ "
+                    "google-key.json ในโฟลเดอร์โปรเจกต์ หรือตั้ง GOOGLE_APPLICATION_CREDENTIALS "
+                    "แบบถาวรใน Windows Environment Variables (ดู docs/google-cloud-tts.md)"
+                ),
+            }
 
         with self._lock:
             usage = self._usage()
@@ -299,7 +277,7 @@ class GoogleTts:
         renames the file and silently breaks a path that names it directly.
         """
         try:
-            candidates = sorted(folder.glob("*.json"))
+            candidates = [folder / "google-tts-key.json", *sorted(folder.glob("*.json"))]
         except OSError:
             return None
         for path in candidates:
@@ -324,6 +302,8 @@ class GoogleTts:
         """
         for name in ("UDTH_GOOGLE_KEY", "GOOGLE_APPLICATION_CREDENTIALS"):
             value = os.environ.get(name)
+            if not value and Path("D:/secure/google-tts-key.json").is_file():
+                return Path("D:/secure/google-tts-key.json")
             if not value:
                 continue
             path = Path(value)
@@ -342,36 +322,6 @@ class GoogleTts:
         return local if local.is_file() else None
 
     @staticmethod
-    def _persisted_but_unseen() -> str:
-        """A value `setx` saved that this process never received.
-
-        Windows hands a process its environment when the process is created,
-        so a server launched from a window that was already open when `setx`
-        ran sees nothing at all — the setting is correct, and the symptom is
-        indistinguishable from never having set it up. Reading the store
-        `setx` writes to is the only way to tell the two apart, and getting
-        that wrong sends people back to redo a step they already did.
-        """
-        if os.name != "nt":
-            return ""
-        try:
-            import winreg
-
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as env:
-                for name in ("UDTH_GOOGLE_KEY", "GOOGLE_APPLICATION_CREDENTIALS"):
-                    if os.environ.get(name):
-                        continue  # inherited fine; not this problem
-                    try:
-                        value, _ = winreg.QueryValueEx(env, name)
-                    except FileNotFoundError:
-                        continue
-                    if value:
-                        return f"{name}={value}"
-        except (OSError, ImportError):
-            return ""
-        return ""
-
-    @staticmethod
     def _configured_path() -> str:
         """What the environment *says* the key path is, whether or not it exists.
 
@@ -385,22 +335,6 @@ class GoogleTts:
                 return value
         return ""
 
-    @staticmethod
-    def _adc_path() -> Path | None:
-        """Where `gcloud auth application-default login` leaves its credentials.
-
-        Resolved through google-auth's own helper rather than by rebuilding the
-        path here, so it cannot drift from the file the library will actually
-        read. Pure path arithmetic — no network, no credential parsing.
-        """
-        try:
-            from google.auth import _cloud_sdk
-
-            path = Path(_cloud_sdk.get_application_default_credentials_path())
-        except Exception:  # library missing or internals moved — treat as none
-            return None
-        return path if path.is_file() else None
-
     @classmethod
     def _client_and_types(cls):
         try:
@@ -411,49 +345,20 @@ class GoogleTts:
             ) from exc
 
         key = cls.key_path()
-        adc = None if key else cls._adc_path()
-        if not key and not adc:
-            # Stop here instead of letting google.auth discover it. With no
-            # credentials anywhere it falls back to probing the GCE metadata
-            # server, which is unreachable off Google's network and only gives
-            # up after GCE_METADATA_TIMEOUT x GCE_METADATA_DETECT_RETRIES
-            # (3s x 3 by default) — a measured 12 seconds. status() runs on
-            # every /health, and the extension asks for that on page load, on
-            # every settings-panel open and on every popup open, so that toll
-            # was being paid over and over for an answer already known here.
-            raise TtsError(NO_CREDENTIALS_HINT)
-
-        # Identity of the credentials in use. Building a client parses the key
-        # and sets up a transport, and status() would otherwise redo it on
-        # every request; keying on mtime means a replaced key still takes
-        # effect without restarting the server.
-        source = key or adc
         try:
-            stamp = (str(source), source.stat().st_mtime_ns)
-        except OSError:
-            stamp = (str(source), 0)
-
-        with cls._client_lock:
-            cached = cls._client_cache
-            if cached is not None and cached[0] == stamp:
-                return cached[1], cached[2]
-
-            try:
-                if key:
-                    client = texttospeech.TextToSpeechClient.from_service_account_file(str(key))
-                else:
-                    # No explicit key, but gcloud left application-default
-                    # credentials behind — let the library pick those up.
-                    client = texttospeech.TextToSpeechClient()
-            except Exception as exc:
-                # The underlying reason used to be swallowed, which turned every
-                # cause — wrong path, revoked key, disabled API — into one
-                # unactionable sentence.
-                where = f"ใช้ไฟล์ {key}" if key else f"ใช้ credentials ของ gcloud ที่ {adc}"
-                raise TtsError(
-                    f"ตั้งค่า Google Cloud credentials ไม่สำเร็จ ({where}): "
-                    f"{type(exc).__name__}: {str(exc)[:160]} — ดู docs/google-cloud-tts.md"
-                ) from exc
-
-            cls._client_cache = (stamp, client, texttospeech)
+            if key:
+                client = texttospeech.TextToSpeechClient.from_service_account_file(str(key))
+            else:
+                # No explicit key: fall back to whatever ambient credentials
+                # exist (gcloud auth application-default login, GCE metadata).
+                client = texttospeech.TextToSpeechClient()
             return client, texttospeech
+        except Exception as exc:
+            # The underlying reason used to be swallowed, which turned every
+            # cause — wrong path, revoked key, disabled API — into one
+            # unactionable sentence.
+            where = f"ใช้ไฟล์ {key}" if key else "ไม่พบไฟล์ key"
+            raise TtsError(
+                f"ตั้งค่า Google Cloud credentials ไม่สำเร็จ ({where}): "
+                f"{type(exc).__name__}: {str(exc)[:160]} — ดู docs/google-cloud-tts.md"
+            ) from exc

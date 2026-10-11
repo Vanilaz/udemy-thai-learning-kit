@@ -17,13 +17,14 @@ html.udth-hide-native .ytp-caption-window-container {
   position: absolute;
   left: 0;
   right: 0;
-  /* Sit above Udemy's control bar rather than behind it. */
+  /* content.js replaces this with a measured value just above the control bar;
+     9% is only the fallback before the first measurement. */
   bottom: 9%;
   z-index: 2147483000;
   display: flex;
   justify-content: center;
   pointer-events: none;
-  padding: 0 6%;
+  padding: 0 8%;
   box-sizing: border-box;
 }
 
@@ -31,37 +32,74 @@ html.udth-hide-native .ytp-caption-window-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  max-width: 100%;
+  gap: 0;
+  max-width: min(100%, 780px);
   text-align: center;
+}
+
+.udth-line:has(.udth-th, .udth-en) {
+  position: relative;
+  padding: 8px 18px 10px;
+  border-radius: 12px;
+  background: rgba(12, 12, 18, 0.82);
+  backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.udth-line:has(.udth-th, .udth-en)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #0ea5e9, #14b8a6);
 }
 
 .udth-en,
 .udth-th {
-  display: inline-block;
+  display: block;
   max-width: 100%;
-  padding: 2px 10px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.72);
+  margin: 0;
+  padding: 0;
   color: #fff;
-  line-height: 1.45;
+  font-family: "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
   text-wrap: balance;
   overflow-wrap: break-word;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-}
-
-/* English sits smaller and dimmer — it is the reference line, not the one
-   you read. Thai is the primary line. */
-.udth-en {
-  font-size: clamp(12px, 1.35vw, 17px);
-  color: #d7dae0;
-  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
 }
 
 .udth-th {
-  font-size: clamp(15px, 1.75vw, 23px);
+  font-size: var(--udth-th, 20px);
   font-weight: 500;
-  letter-spacing: 0.01em;
+  line-height: 1.6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.udth-en {
+  order: 2;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: var(--udth-en, 14px);
+  font-weight: 400;
+  line-height: 1.45;
+  color: #aeb4c4;
+}
+
+.udth-overlay[data-size="s"] { --udth-th: clamp(15px, 1.4vw, 19px); --udth-en: clamp(11.5px, 0.9vw, 13px); }
+.udth-overlay[data-size="m"], .udth-overlay:not([data-size]) { --udth-th: clamp(17px, 1.7vw, 23px); --udth-en: clamp(12.5px, 1.1vw, 15px); }
+.udth-overlay[data-size="l"] { --udth-th: clamp(20px, 2.1vw, 29px); --udth-en: clamp(14px, 1.3vw, 18px); }
+
+.udth-overlay {
+  transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udth-overlay {
+    transition: none;
+  }
 }
 
 .udth-status {
@@ -87,193 +125,453 @@ html.udth-hide-native .ytp-caption-window-container {
 
 /* ------------------------------------------------ player control button */
 
-/* A self-contained chip, sized by its own content.
-   Earlier this used height:100% so it would match the control bar — but when
-   the bar could not be found and it landed in some taller container instead,
-   it stretched into a purple stripe across the whole player. A control must
-   look the same wherever it is mounted, so nothing here depends on the parent:
-   fixed height, width from content, and `align-self` so a stretching flex
-   container cannot pull it out of shape. */
-.udth-pill {
-  flex: 0 0 auto;
-  align-self: center;
+/* Docked beside the player's own tools. It copies the native button's class
+   for size and hover; everything below only draws the glyph and the dot. */
+.udth-tool {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-sizing: border-box;
-  width: auto;
-  max-width: 96px;
-  height: 26px;
-  margin: 0 4px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.35);
+  flex: 0 0 auto;
+  width: 36px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #fff;
-  font: 600 11.5px/1 "Segoe UI", system-ui, sans-serif;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  overflow: hidden;
   cursor: pointer;
-  vertical-align: middle;
-  opacity: 0.85;
 }
 
-.udth-pill:hover,
-.udth-pill:focus-visible {
+.udth-tool svg {
+  display: block;
+  opacity: 0.92;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.udth-tool:hover svg,
+.udth-tool:focus-visible svg {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.55);
+  transform: scale(1.08);
 }
 
-/* Filled while something is on. A background rather than an underline: an
-   underline on an unexpectedly wide element is exactly the stripe bug. */
-.udth-pill-on {
+.udth-tool:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: -4px;
+  border-radius: 8px;
+}
+
+/* A small dot says "on" without opening anything — the same job a lit CC
+   button does. */
+.udth-dot {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.udth-pill-on .udth-dot {
+  background: #34d399;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 0 10px rgba(52, 211, 153, 0.8);
+}
+
+.udth-pill-open svg {
+  color: #99f6e4;
   opacity: 1;
-  border-color: rgba(139, 116, 255, 0.85);
-  background: #8b74ff;
-  color: #fff;
 }
 
-.udth-pill-open {
-  opacity: 1;
-}
-
-/* Only when no control bar could be found. */
+/* Only when no control bar could be found: a round floating button, still an
+   icon, never a word on its own. */
 .udth-pill-floating {
   position: absolute;
-  right: 12px;
-  bottom: 56px;
+  right: 14px;
+  bottom: 64px;
   z-index: 2147483100;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: rgba(8, 14, 20, 0.82);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  cursor: pointer;
 }
 
 /* ------------------------------------------------------------ player menu */
 
-/* Opens above the button, like the player's own settings menu. */
 .udth-menu[hidden] {
   display: none;
 }
 
 .udth-menu {
+  box-sizing: border-box;
   position: absolute;
-  right: 12px;
-  bottom: 62px;
+  right: 14px;
+  bottom: 72px;
   z-index: 2147483200;
-  width: 292px;
-  max-width: calc(100% - 24px);
-  max-height: 66%;
+  width: 332px;
+  max-width: calc(100% - 28px);
+  max-height: calc(100% - 96px);
   overflow-y: auto;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(18, 19, 24, 0.97);
-  color: #eceef3;
-  font: 500 12.5px/1.5 "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  padding: 0 14px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 14, 20, 0.92);
+  backdrop-filter: blur(22px) saturate(160%);
+  color: #eef0f6;
+  font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: udth-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  transform-origin: bottom right;
 }
 
+@keyframes udth-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+/* Header: a brand tile, name, language pair and version — and it stays put
+   while the body scrolls, so the menu never loses its title. */
 .udth-menu-head {
-  margin-bottom: 9px;
-  color: #a9aeba;
-  font-size: 11.5px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 0 -14px 8px;
+  padding: 12px 14px 8px;
+  background: linear-gradient(180deg, rgba(8, 14, 20, 1) 70%, rgba(8, 14, 20, 0));
+}
+
+.udth-logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0ea5e9, #34d399);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(20, 184, 166, 0.45);
+}
+
+.udth-menu-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.udth-menu-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.udth-menu-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #aeb4c4;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .udth-menu-arrow {
-  color: #8b74ff;
+  color: #5eead4;
 }
 
-.udth-menu-row,
-.udth-menu-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
+.udth-ver {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(94, 234, 212, 0.16);
+  color: #99f6e4;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.udth-chip {
-  padding: 5px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 7px;
-  background: transparent;
-  color: #c9ccd4;
+/* Two switch tiles: icon, name, state. */
+.udth-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.udth-chip,
+.udth-btn {
   font: inherit;
-  white-space: nowrap;
   cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
 }
 
-.udth-chip:hover {
-  background: rgba(255, 255, 255, 0.12);
+.udth-chip:active,
+.udth-btn:active {
+  transform: scale(0.97);
+}
+
+.udth-chip:focus-visible,
+.udth-btn:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+
+.udth-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #c4c9d6;
+  text-align: left;
+}
+
+.udth-tile:hover {
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
+}
+
+.udth-tile-ico {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.udth-tile-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.udth-tile-txt b {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.udth-tile-txt small {
+  font-size: 11.5px;
+  font-weight: 500;
+  opacity: 0.75;
 }
 
 .udth-chip-on {
-  border-color: rgba(139, 116, 255, 0.7);
-  background: rgba(139, 116, 255, 0.22);
+  border-color: transparent;
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
   color: #fff;
+  box-shadow: 0 8px 22px rgba(14, 165, 233, 0.45);
+}
+
+.udth-chip-on:hover {
+  background: linear-gradient(135deg, #38bdf8, #34d399);
+}
+
+.udth-chip-on .udth-tile-ico {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.udth-section {
+  display: none;
+  margin: 0 2px 6px;
+  color: #8f96a8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.udth-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .udth-field {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 4px 8px;
-  margin-bottom: 10px;
+  gap: 2px 10px;
+  margin-bottom: 8px;
+}
+
+.udth-card > .udth-field:last-child {
+  margin-bottom: 0;
 }
 
 .udth-field > span {
-  grid-column: 1 / -1;
-  color: #a9aeba;
-  font-size: 11.5px;
-  font-weight: 400;
+  color: #c4c9d6;
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
 .udth-field select {
   grid-column: 1 / -1;
   width: 100%;
-  padding: 5px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  background: #22242c;
-  color: #eceef3;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: #0d1a24;
+  color: #eef0f6;
   font: inherit;
 }
 
+.udth-field select:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 1px;
+}
+
 .udth-field input[type="range"] {
+  grid-column: 1 / -1;
   width: 100%;
-  accent-color: #8b74ff;
+  height: 4px;
+  margin: 5px 0 1px;
+  accent-color: #5eead4;
+  cursor: pointer;
 }
 
 .udth-field output {
-  min-width: 42px;
-  color: #a9aeba;
-  font-size: 11.5px;
-  text-align: right;
+  color: #99f6e4;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
+/* A real switch instead of a bare checkbox. */
 .udth-check {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 12px;
-  color: #c9ccd4;
-  font-size: 12px;
-  font-weight: 400;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #d3d7e2;
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .udth-check input {
-  accent-color: #8b74ff;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.udth-switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: #4b5163;
+  transition: background 160ms ease;
+}
+
+.udth-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 160ms ease;
+}
+
+.udth-check input:checked + .udth-switch {
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+}
+
+.udth-check input:checked + .udth-switch::after {
+  transform: translateX(16px);
+}
+
+.udth-check input:focus-visible + .udth-switch {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+
+.udth-menu-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+}
+
+.udth-btn {
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: transparent;
+  color: #e4e7ef;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.udth-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.udth-btn-primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
+}
+
+.udth-btn-primary:hover {
+  background: linear-gradient(135deg, #38bdf8, #34d399);
 }
 
 .udth-panel-note:not(:empty) {
-  color: #a9aeba;
-  font-size: 11.5px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #b6bccb;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.6;
 }
 
-.udth-panel-note-error {
-  color: #ffc9c9;
+.udth-panel-note-error:not(:empty) {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udth-menu {
+    animation: none;
+  }
+  .udth-switch,
+  .udth-switch::after,
+  .udth-chip,
+  .udth-btn {
+    transition: none;
+  }
 }
 
 /* -------------------------------------------------------- loading gate */
@@ -290,9 +588,9 @@ html.udth-hide-native .ytp-caption-window-container {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(8, 9, 12, 0.72);
-  backdrop-filter: blur(3px);
-  font: 500 14px/1.6 "Segoe UI", system-ui, sans-serif;
+  background: rgba(8, 8, 16, 0.7);
+  backdrop-filter: blur(6px);
+  font: 500 14px/1.6 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
 }
 
 .udth-gate-card {
@@ -303,9 +601,9 @@ html.udth-hide-native .ytp-caption-window-container {
   width: 380px;
   max-width: 100%;
   padding: 26px 24px 22px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(20, 21, 27, 0.97);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(16, 28, 38, 0.97), rgba(16, 16, 26, 0.98));
   color: #eceef3;
   text-align: center;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
@@ -316,7 +614,7 @@ html.udth-hide-native .ytp-caption-window-container {
   height: 34px;
   border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.16);
-  border-top-color: #8b74ff;
+  border-top-color: #5eead4;
   animation: udth-spin 850ms linear infinite;
 }
 
@@ -344,9 +642,9 @@ html.udth-hide-native .ytp-caption-window-container {
 
 .udth-gate-skip {
   margin-top: 4px;
-  padding: 7px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
+  padding: 9px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
   background: transparent;
   color: #c9ccd4;
   font: inherit;
@@ -379,11 +677,12 @@ html.udth-hide-native .ytp-caption-window-container {
   width: 264px;
   max-width: calc(100vw - 32px);
   padding: 11px 13px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(18, 19, 24, 0.94);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(16, 28, 38, 0.95), rgba(16, 16, 26, 0.96));
+  backdrop-filter: blur(14px);
   color: #eceef3;
-  font: 500 13px/1.55 "Segoe UI", system-ui, sans-serif;
+  font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   animation: udth-batch-in 200ms ease-out;
 }
@@ -453,7 +752,7 @@ html.udth-hide-native .ytp-caption-window-container {
   height: 100%;
   width: 0;
   border-radius: inherit;
-  background: #8b74ff;
+  background: linear-gradient(90deg, #0ea5e9, #5eead4);
   transition: width 220ms ease-out;
 }
 
@@ -584,4 +883,143 @@ html.udth-hide-native .ytp-caption-window-container {
   background: color-mix(in srgb, currentColor 12%, transparent);
   color: inherit;
   border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+/* ================= menu v2: short, segmented, advanced collapsed ================= */
+.udth-menu {
+  width: 300px;
+  padding: 0 14px 14px;
+}
+
+.udth-row-label {
+  margin: 10px 2px 6px;
+  color: #8fa0b3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.udth-seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.udth-seg button {
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #b9c4d2;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.udth-seg button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.udth-seg button.udth-seg-on {
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.35);
+}
+
+.udth-seg button:focus-visible,
+.udth-dubrow:focus-visible,
+.udth-adv summary:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+
+.udth-dubrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e8edf3;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.udth-dubrow:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.udth-dubrow-txt {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.udth-dubrow-txt b {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.udth-dubrow-txt small {
+  color: #8fa0b3;
+  font-size: 12px;
+}
+
+.udth-dubrow-on .udth-switch {
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+}
+
+.udth-dubrow-on .udth-switch::after {
+  transform: translateX(16px);
+}
+
+.udth-dubrow-on .udth-dubrow-txt small {
+  color: #5eead4;
+}
+
+.udth-adv {
+  margin-top: 10px;
+}
+
+.udth-adv summary {
+  padding: 8px 4px;
+  color: #a9b6c6;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.udth-adv summary::-webkit-details-marker {
+  display: none;
+}
+
+.udth-adv summary::after {
+  content: " ▾";
+  color: #5eead4;
+}
+
+.udth-adv[open] summary::after {
+  content: " ▴";
+}
+
+.udth-adv .udth-card {
+  margin: 4px 0 0;
+}
+
+.udth-menu-actions {
+  margin-top: 6px;
 }

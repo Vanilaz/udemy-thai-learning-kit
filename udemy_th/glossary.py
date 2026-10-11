@@ -10,9 +10,30 @@ side effect of watching the course.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .models import Term
+
+# Words the translator sometimes files as "technical terms" although they come
+# from the video player, the account UI or general business talk. They are not
+# something a programmer needs to memorise.
+NOT_TECHNICAL = frozenset({
+    "speed", "subtitles", "transcripts", "roll back", "bookmark", "sign in", "sign up",
+    "activation", "authorization request", "sensitivity analysis", "certification",
+    "support plan", "aws support", "tutorial", "best practices", "rules",
+    "troubleshooting", "blueprint",
+})
+
+
+def normalise_key(term: str) -> str:
+    """Key under which `Array.from`, `Array.from()` and `array.froms` collide."""
+    key = term.lower().strip()
+    key = re.sub(r"\s*\(.*?\)\s*", " ", key).strip()
+    key = re.sub(r"\s+", " ", key)
+    if key.endswith("s") and len(key) > 4 and not key.endswith("ss"):
+        key = key[:-1]
+    return key
 
 
 class Glossary:
@@ -67,6 +88,42 @@ class Glossary:
             return False
         self.terms[key] = term
         return True
+
+    def tidy(self) -> tuple[int, int]:
+        """Merge near-duplicate entries and drop non-technical words.
+
+        Returns (merged, dropped). Keeps the longest explanation, the cleanest
+        (shortest, bracket-free) spelling as the display term, and the union of
+        the lessons each variant appeared in.
+        """
+        groups: dict[str, list[Term]] = {}
+        dropped = 0
+        for term in self.terms.values():
+            if term.term.lower().strip() in NOT_TECHNICAL:
+                dropped += 1
+                continue
+            groups.setdefault(normalise_key(term.term), []).append(term)
+
+        merged = 0
+        result: dict[str, Term] = {}
+        for variants in groups.values():
+            best = max(variants, key=lambda t: (len(t.explanation), -len(t.term)))
+            name = min((t.term for t in variants), key=lambda n: ("(" in n, len(n)))
+            lessons: list[str] = []
+            for variant in variants:
+                for lesson in variant.lessons:
+                    if lesson not in lessons:
+                        lessons.append(lesson)
+            merged += len(variants) - 1
+            result[name.lower()] = Term(
+                term=name,
+                thai=best.thai,
+                explanation=best.explanation,
+                keep_english=best.keep_english,
+                lessons=lessons,
+            )
+        self.terms = result
+        return merged, dropped
 
     def relevant_to(self, text: str, limit: int = 60) -> list[Term]:
         """Terms that actually appear in `text`, most-seen first.

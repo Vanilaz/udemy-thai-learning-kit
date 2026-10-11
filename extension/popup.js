@@ -24,72 +24,9 @@ const queueFillEl = document.getElementById("queueFill");
 // measure against — the server only reports what is still waiting.
 let queuePeak = 0;
 let knownNativeVoices = [];
-let optionsTouched = false;
-let queueBusy = false;
-
-function renderGoogleQuota() {
-  const card = document.getElementById("googleQuota");
-  const engine = serverEngines.find(item => item.name === "google");
-  card.hidden = !engine;
-  if (!engine) return;
-  const valid = Number.isFinite(engine.used) && Number.isFinite(engine.limit) && engine.limit > 0;
-  const percent = valid ? Math.min(100, Math.max(0, engine.used / engine.limit * 100)) : 0;
-  const remaining = valid ? Math.max(0, engine.limit - engine.used) : null;
-  const format = value => value.toLocaleString("th-TH");
-  card.className = `quota${valid && percent >= 80 ? " warn" : ""}`;
-  document.getElementById("quotaRemaining").textContent = valid ? `${format(remaining)} ไบต์` : "ยังอ่านยอดไม่ได้";
-  document.getElementById("quotaDetail").textContent = valid
-    ? `เหลือถึงเพดานในเครื่อง · ใช้ ${format(engine.used)} / ${format(engine.limit)} ไบต์`
-    : "ตรวจการตั้งค่า Google แล้วเปิดหน้าต่างนี้ใหม่";
-  document.getElementById("quotaBadge").textContent = !valid ? "ยอดไม่พร้อม"
-    : percent >= 100 ? "ถึงเพดานแล้ว" : percent >= 80 ? "ใกล้เพดานแล้ว" : `ใช้ ${Math.round(percent)}%`;
-  document.getElementById("quotaFill").style.width = `${percent}%`;
-  document.getElementById("quotaProgress").setAttribute("aria-valuenow", String(Math.round(percent)));
-  document.getElementById("switchEdge").disabled = !serverEngines.some(item => item.name === "edge" && item.ready) || ttsEngineEl.value === "edge";
-}
-
-function withTimeout(promise, milliseconds = 4000) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error("การเชื่อมต่อใช้เวลานานเกินไป ลองเปิดหน้าต่างนี้ใหม่")), milliseconds);
-    }),
-  ]).finally(() => clearTimeout(timer));
-}
-
-function applySettings(state) {
-  if (optionsTouched) return;
-  enabledEl.checked = state.enabled ?? true;
-  dualEl.checked = state.dualMode ?? true;
-  dubbingEl.checked = Boolean(state.dubbingEnabled);
-  knownNativeVoices = state.nativeVoices || knownNativeVoices;
-  fillEngineOptions(state.ttsEngine || "edge");
-  fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, state.ttsVoice || "");
-  dubbingVolumeEl.value = String(state.dubbingVolume ?? 1);
-  originalAudioVolumeEl.value = String(state.originalAudioVolume ?? 0.15);
-  syncAudioControls();
-  renderGoogleQuota();
-}
-
-async function loadSettings() {
-  const stored = await withTimeout(chrome.storage.local.get([
-    "enabled", "dualMode", "dubbingEnabled", "ttsEngine", "ttsVoice", "dubbingVolume", "originalAudioVolume",
-  ]));
-  applySettings(stored);
-  const tab = await withTimeout(activeTab());
-  if (!tab || !/https:\/\/(www\.)?(udemy\.com\/course\/|youtube\.com\/(watch|shorts))/.test(tab.url || "")) return;
-  try {
-    const state = await withTimeout(chrome.tabs.sendMessage(tab.id, { type: "getState" }), 2500);
-    if (state) applySettings(state);
-  } catch {
-    hintEl.textContent = "แสดงค่าที่บันทึกไว้ — ยังติดต่อหน้าวิดีโอไม่ได้ ลองรีเฟรชหน้าวิดีโอ";
-  }
-}
 
 function syncAudioControls() {
-  audioSettingsEl.hidden = false;
-  document.getElementById("audioNotice").hidden = dubbingEl.checked;
+  audioSettingsEl.hidden = !dubbingEl.checked;
   dubbingValueEl.value = `${Math.round(Number(dubbingVolumeEl.value) * 100)}%`;
   originalAudioValueEl.value = `${Math.round(Number(originalAudioVolumeEl.value) * 100)}%`;
 }
@@ -146,10 +83,6 @@ function fillVoiceOptions(engineName, nativeVoices, selected) {
     voices.forEach((voice) => voiceEl.add(new Option(voice.label, voice.id)));
   }
   if ([...voiceEl.options].some((option) => option.value === selected)) voiceEl.value = selected;
-  else if (selected) {
-    voiceEl.add(new Option(`${selected} — ค่าที่บันทึกไว้`, selected));
-    voiceEl.value = selected;
-  }
   else if (voiceEl.options.length) voiceEl.selectedIndex = 0;
 }
 
@@ -168,10 +101,6 @@ async function refresh() {
 
   if (health && health.ok) {
     serverEngines = health.voices || [];
-    renderGoogleQuota();
-    const selectedVoice = voiceEl.value;
-    fillEngineOptions(ttsEngineEl.value || "edge");
-    fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, selectedVoice);
     statusEl.className = "status ok";
     statusEl.textContent = `เซิร์ฟเวอร์ทำงานอยู่ (${health.engine})`;
     hintEl.textContent = "เปิดวิดีโอใน Udemy หรือ YouTube ได้เลย ครั้งแรกของแต่ละบทจะใช้เวลาแปลสักครู่";
@@ -182,7 +111,7 @@ async function refresh() {
       "ดับเบิลคลิก <code>start-server.cmd</code> ในโฟลเดอร์โปรเจกต์ แล้วเปิดหน้านี้ใหม่";
   }
 
-  const tab = await withTimeout(activeTab()).catch(() => null);
+  const tab = await activeTab();
   const url = (tab && tab.url) || "";
   const onUdemy = url.includes("udemy.com/course/");
   const onVideoPage = onUdemy || /youtube\.com\/(watch|shorts)/.test(url);
@@ -195,7 +124,15 @@ async function refresh() {
   try {
     const state = await withTimeout(chrome.tabs.sendMessage(tab.id, { type: "getState" }), 2500);
     if (state) {
-      applySettings(state);
+      enabledEl.checked = state.enabled;
+      dualEl.checked = state.dualMode;
+      dubbingEl.checked = Boolean(state.dubbingEnabled);
+      knownNativeVoices = state.nativeVoices || [];
+      fillEngineOptions(state.ttsEngine || "edge");
+      fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, state.ttsVoice);
+      dubbingVolumeEl.value = String(state.dubbingVolume ?? 1);
+      originalAudioVolumeEl.value = String(state.originalAudioVolume ?? 0.15);
+      syncAudioControls();
       if (health && health.ok && state.status === "ready") {
         const engine = allEngines().find((e) => e.name === state.ttsEngine);
         if (!state.dubbingEnabled) {
@@ -272,8 +209,6 @@ async function refreshQueue() {
 }
 
 async function pushOptions() {
-  optionsTouched = true;
-  renderGoogleQuota();
   const options = {
     enabled: enabledEl.checked,
     dualMode: dualEl.checked,
@@ -298,15 +233,6 @@ ttsEngineEl.addEventListener("change", () => {
   pushOptions();
 });
 voiceEl.addEventListener("change", pushOptions);
-document.getElementById("switchEdge").addEventListener("click", async () => {
-  const edge = serverEngines.find(engine => engine.name === "edge" && engine.ready);
-  if (!edge) return;
-  ttsEngineEl.value = "edge";
-  fillVoiceOptions("edge", knownNativeVoices, "th-TH-NiwatNeural");
-  await pushOptions();
-  statusEl.className = "status ok";
-  statusEl.textContent = "เปลี่ยนระบบเสียงเป็น Edge แล้ว";
-});
 dubbingVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
 originalAudioVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
 
@@ -399,3 +325,8 @@ loadSettings().catch(() => {
 refresh();
 refreshQueue();
 setInterval(refreshQueue, 2000);
+
+(() => {
+  const el = document.querySelector(".version");
+  if (el) el.textContent = `v${chrome.runtime.getManifest().version}`;
+})();

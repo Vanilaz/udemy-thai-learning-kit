@@ -25,11 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
-import os
-import re
 import sys
-import time
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -165,6 +161,27 @@ def _job_action(key: str, action: str) -> str:
         return _enqueue(key, job.get("priority", PRIORITY_NOW), job["title"], _job_args[key])
 
 
+# Only the Chrome extension (and plain tools such as curl, which send no Origin
+# header) may talk to this server. A server on 127.0.0.1 with "Allow-Origin: *"
+# can be driven by ANY web page you happen to have open: it could queue
+# translation jobs on your machine (burning your agy / API quota) or ask for
+# speech synthesis. Browsers always attach an Origin to cross-site requests,
+# so refusing every origin that is not the extension closes that door.
+_EXTENSION_ORIGIN_PREFIX = "chrome-extension://"
+_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
+
+
+def origin_allowed(origin: str | None) -> bool:
+    return not origin or origin.startswith(_EXTENSION_ORIGIN_PREFIX)
+
+
+def host_allowed(host_header: str | None) -> bool:
+    """Reject DNS-rebinding: the Host must be the loopback name we bound to."""
+    if not host_header:
+        return True
+    return host_header.rsplit(":", 1)[0].strip("[]") in _ALLOWED_HOSTS
+
+
 class _Handler(BaseHTTPRequestHandler):
     # Injected by serve()
     cache_dir: Path
@@ -177,6 +194,22 @@ class _Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # quieter console
         return
+
+    def _cors_origin(self) -> str:
+        """Echo the extension's own origin back; never a wildcard."""
+        return self.headers.get("Origin") or "null"
+
+    def _forbidden(self) -> bool:
+        """Answer 403 and return True when this caller must be refused."""
+        if origin_allowed(self.headers.get("Origin")) and host_allowed(self.headers.get("Host")):
+            return False
+        body = json.dumps({"error": "forbidden"}).encode("utf-8")
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return True
 
     # -- CORS ---------------------------------------------------------------
 
@@ -209,17 +242,16 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self._cors_headers()
-        if self.close_connection:
-            self.send_header("Connection", "close")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):  # noqa: N802
-        if not self._check_access(write=True):
+        if self._forbidden():
             return
         self.send_response(204)
-        self._cors_headers()
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", "0")
@@ -228,7 +260,7 @@ class _Handler(BaseHTTPRequestHandler):
     # -- Routes -------------------------------------------------------------
 
     def do_GET(self):  # noqa: N802
-        if not self._check_access():
+        if self._forbidden():
             return
         path = urlparse(self.path).path
         if path == "/health":
@@ -284,17 +316,15 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", self.AUDIO_TYPES[suffix])
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-        self._cors_headers()
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.end_headers()
         self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
-        if not self._check_access(write=True):
+        if self._forbidden():
             return
         path = urlparse(self.path).path
-        action = re.fullmatch(r"/job/([a-f0-9]{20})/(cancel|retry)", path)
-        if path not in ("/translate", "/tts") and not action:
-            self.close_connection = True
+        if path not in ("/translate", "/tts"):
             self._send(404, {"error": "not found"})
             return
 
@@ -317,24 +347,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": "อ่าน JSON ไม่ได้"})
             return
 
-        if not isinstance(payload, dict):
-            self._send(400, {"error": "JSON ต้องเป็น object"})
-            return
-
-        if action:
-            try:
-                status = _job_action(*action.groups())
-                self._send(200, {"status": status})
-            except KeyError:
-                self._send(404, {"error": "ไม่พบงานนี้"})
-            except ValueError as exc:
-                self._send(409, {"error": str(exc)})
-            return
-
         if path == "/tts":
-            if not isinstance(payload.get("text"), str) or not isinstance(payload.get("voice"), str):
-                self._send(400, {"error": "text และ voice ต้องเป็นข้อความ"})
-                return
             self._handle_tts(payload)
             return
 
@@ -394,40 +407,6 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": str(exc)})
             return
         self._send(200, {**result, "url": f"/audio/{result['file']}"})
-
-
-def _validate_translation(payload: dict, cues) -> None:
-    if not isinstance(cues, list) or not 1 <= len(cues) <= 20000:
-        raise ValueError("cues ต้องเป็นรายการ 1–20000 บรรทัด")
-    for field in ("title", "course", "lecture", "mode"):
-        if field in payload and not isinstance(payload[field], str):
-            raise ValueError(f"{field} ต้องเป็นข้อความ")
-    for field in ("batch", "force"):
-        if field in payload and not isinstance(payload[field], bool):
-            raise ValueError(f"{field} ต้องเป็น boolean")
-    for cue in cues:
-        if not isinstance(cue, dict) or not isinstance(cue.get("text"), str) or not cue["text"].strip():
-            raise ValueError("ทุก cue ต้องมี text ที่ไม่ว่าง")
-        times = [cue.get("start"), cue.get("end")]
-        if not all(isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t) for t in times):
-            raise ValueError("start และ end ต้องเป็นเวลาที่ถูกต้อง")
-        if times[0] < 0 or times[1] <= times[0]:
-            raise ValueError("end ต้องมากกว่า start และเวลาต้องไม่ติดลบ")
-
-
-def _read_cached(path: Path, cues: list[dict]) -> list[dict] | None:
-    try:
-        result = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(result, list) or len(result) != len(cues):
-            return None
-        for row, cue in zip(result, cues):
-            if (not isinstance(row, dict) or not isinstance(row.get("th"), str) or not row["th"].strip()
-                    or row.get("en") != cue["text"].strip()
-                    or row.get("start") != cue["start"] or row.get("end") != cue["end"]):
-                return None
-        return result
-    except (OSError, ValueError):
-        return None
 
 
 def _cache_key(course: str, title: str, cues: list[dict]) -> str:
@@ -599,7 +578,6 @@ def _run_job(
         partial: dict[int, str] = {}
 
         def publish(_index: int, answer: str) -> None:
-            _check_cancelled(key)
             partial.update(_parse_subtitles(_split_sections(answer).get("SUBTITLES", "")))
             _set_job(key, cues=_render_cues(lesson, partial))
 
@@ -629,20 +607,19 @@ def _run_job(
             if missing:
                 raise RuntimeError(f"คำแปลยังขาด {len(missing)}/{len(segments)} บรรทัดหลังลองซ่อม กดลองใหม่ได้จากคิว")
 
-        with _cv:
-            _check_cancelled(key)
-            # Re-read instead of saving the copy loaded before translating.
-            # That copy is minutes old, and while this lecture was being
-            # translated another worker may have added terms of its own —
-            # writing this snapshot back over them would silently drop them.
-            merged = Glossary(glossary_path)
-            for term in terms:
-                merged.add(term)
-            merged.save()
-            result = _render_cues(lesson, by_id)
-            _atomic_json(cache_dir / f"{key}.json", result)
-            translated = sum(1 for r in result if r["th"])
-            _set_job(key, status="done", cues=result, progress=len(result), missing=0, phase="complete")
+        for term in terms:
+            glossary.add(term)
+        glossary.save()
+
+        result = _render_cues(lesson, by_id)
+
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{key}.json").write_text(
+            json.dumps(result, ensure_ascii=False), encoding="utf-8"
+        )
+
+        translated = sum(1 for r in result if r["th"])
+        _set_job(key, status="done", cues=result, progress=len(result))
         print(f"  เสร็จ: {title} — แปล {translated}/{len(result)} บรรทัด", flush=True)
 
     except JobCancelled:
@@ -748,12 +725,10 @@ def serve(
     _Handler.engine = engine
     _Handler.effort = effort
     _Handler.tts = TtsRegistry(cache_dir)
+
+    threading.Thread(target=_worker, daemon=True, name="udth-worker").start()
+
     server = _Server((HOST, port), _Handler)
-    _restore_jobs(cache_dir, glossary_path)
-    for index in range(WORKER_COUNT):
-        threading.Thread(
-            target=_worker, daemon=True, name=f"udth-worker-{index + 1}"
-        ).start()
     print("=" * 58)
     print("  Udemy TH — เซิร์ฟเวอร์แปลซับและเสียงพากย์ พร้อมทำงาน")
     print("=" * 58)

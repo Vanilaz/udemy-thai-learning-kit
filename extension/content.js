@@ -32,6 +32,7 @@
     status: "idle",
     enabled: true,
     dualMode: true,
+    capSize: "m",
     overlay: null,
     line: null,
     video: null,
@@ -60,10 +61,7 @@
     // `cursor` is the next segment eligible to be spoken, `playing` guards
     // against starting a second one over the top, and `token` invalidates
     // callbacks belonging to speech that has since been cancelled.
-    dub: {
-      segments: [], cursor: 0, playing: false, token: 0, deadline: 0,
-      autoPaused: false, waitingForAudio: false,
-    },
+    dub: { segments: [], cursor: 0, playing: false, token: 0, deadline: 0 },
     // Quiz mode: english text (normalised) -> thai, plus the DOM watcher that
     // injects it as Udemy renders one question at a time.
     quizMap: null,
@@ -124,7 +122,6 @@
   // `generation` guards against the user moving to another lecture mid-flight:
   // when it no longer matches, the result belongs to a page that is gone.
   async function requestTranslation(payload, generation, onProgress, onPartial) {
-    assertCurrent(generation);
     const started = await chrome.runtime.sendMessage({ type: "startJob", payload });
     assertCurrent(generation);
     if (!started || !started.ok) {
@@ -151,9 +148,6 @@
       const info = polled.data || {};
       if (info.status === "done") return info.cues || [];
       if (info.status === "error") throw new Error(info.error || "แปลไม่สำเร็จ");
-      if (info.status === "cancelled" || info.status === "cancelling") {
-        throw new Error("งานนี้ถูกยกเลิกแล้ว เปิดคิวเพื่อลองใหม่ได้");
-      }
       // A running job publishes what it has finished so far. Handing it over
       // now is what lets the lecture start before the whole thing is done.
       if (onPartial && info.cues && info.cues.length) onPartial(info.cues);
@@ -181,6 +175,88 @@
 
     state.overlay = overlay;
     state.line = line;
+    window.addEventListener("resize", placeOverlay);
+    document.addEventListener("fullscreenchange", placeOverlay);
+    // The pointer events go on the container: the overlay itself is
+    // pointer-events:none so it can never swallow a click meant for the player.
+    for (const type of ["mousemove", "pointerdown", "keydown", "touchstart"]) {
+      container.addEventListener(type, onPointerActivity, { passive: true });
+    }
+    state.video && state.video.addEventListener("pause", placeOverlay);
+    state.video && state.video.addEventListener("play", placeOverlay);
+    onPointerActivity();
+  }
+
+  // The overlay used to sit a fixed 9% above the bottom. Udemy's control bar and
+  // scrubber have a fixed pixel height, so on a short player (or a window that
+  // is not full height) 9% landed on top of the progress bar. Measure the bar
+  // instead and ride just above whichever is taller.
+  // Where the subtitle sits depends on whether the player's controls are on
+  // screen. Udemy fades its control bar out a few seconds after the mouse stops
+  // and the bar's box stays in the layout while invisible, so measuring it
+  // alone left the subtitle floating high over an empty picture. Controls count
+  // as showing while the video is paused or the pointer moved recently.
+  const UI = { lastMove: 0, timer: null };
+  const CONTROLS_IDLE_MS = 2800;
+
+  function controlsShowing() {
+    const video = state.video;
+    if (video && video.paused) return true;
+    if (Date.now() - UI.lastMove < CONTROLS_IDLE_MS) return true;
+    if (panel.open) return true;
+    return false;
+  }
+
+  function onPointerActivity() {
+    const wasHidden = !controlsShowing();
+    UI.lastMove = Date.now();
+    if (wasHidden) placeOverlay();
+    clearTimeout(UI.timer);
+    UI.timer = setTimeout(placeOverlay, CONTROLS_IDLE_MS + 60);
+  }
+
+  let placeQueued = false;
+  function placeOverlay() {
+    if (placeQueued) return;
+    placeQueued = true;
+    requestAnimationFrame(() => {
+      placeQueued = false;
+      const overlay = state.overlay;
+      const video = state.video;
+      if (!overlay || !overlay.isConnected || !video) return;
+      const box = overlay.offsetParent || overlay.parentElement;
+      if (!box) return;
+      const boxRect = box.getBoundingClientRect();
+      if (!boxRect.height) return;
+
+      const showing = controlsShowing();
+      // Resting position: close to the bottom edge, like film subtitles.
+      let lift = Math.max(18, boxRect.height * 0.045);
+      if (showing) {
+        lift = boxRect.height * 0.09;
+        try {
+          const bar = site.controlBar && site.controlBar();
+          if (bar) {
+            const r = bar.getBoundingClientRect();
+            if (r.height && r.bottom > boxRect.top) {
+              lift = Math.max(lift, boxRect.bottom - r.top + 18);
+            }
+          }
+        } catch {
+          /* keep the percentage fallback */
+        }
+      }
+      lift = Math.min(lift, boxRect.height * 0.45);
+      overlay.style.bottom = `${Math.round(lift)}px`;
+      overlay.classList.toggle("udth-raised", showing);
+
+      if (panel.el) {
+        const barTop = Math.max(64, boxRect.height * 0.09, lift - 8);
+        const menuBottom = Math.round(Math.max(64, showing ? barTop : 72));
+        panel.el.style.bottom = `${menuBottom}px`;
+        panel.el.style.maxHeight = `${Math.max(160, Math.round(boxRect.height - menuBottom - 12))}px`;
+      }
+    });
   }
 
   function renderStatus(text, kind = "info") {
@@ -216,8 +292,909 @@
     }
     const th = document.createElement("div");
     th.className = "udth-th";
-    th.textContent = cue.th || cue.en || "";
+    th.lang = "th";
+    // The background sits on an inline span, so it hugs each wrapped line
+    // instead of filling a rectangle across the picture.
+    const span = document.createElement("span");
+    const text = cue.th || cue.en || "";
+    // One nowrap span per word, a zero-width space between them as the only
+    // place the browser may break.
+    thaiWords(text).forEach((word, i) => {
+      if (i) span.appendChild(document.createTextNode("\u200b"));
+      const w = document.createElement("span");
+      w.className = "udth-w";
+      w.textContent = word;
+      span.appendChild(w);
+    });
+    th.appendChild(span);
     state.line.appendChild(th);
+    if (state.overlay) state.overlay.dataset.size = state.capSize;
+    placeOverlay();
+  }
+
+  // -------------------------------------------------------- in-player panel
+  //
+  // The popup is only reachable through the browser's extension menu, which is
+  // the wrong place for a control you reach for mid-sentence. This panel sits
+  // on the player itself: two toggles always visible, the rest a click away.
+  // Every change is written to the same storage keys the popup uses, so the two
+  // never disagree about the current settings.
+
+  // The browser's own voices are an engine like any other from here on; every
+  // other entry is discovered from the server, so a new server-side engine
+  // appears in this picker without the extension changing at all.
+  const BROWSER_ENGINE = {
+    name: "windows",
+    label: "Windows Natural (ในเบราว์เซอร์)",
+    ready: true,
+    voices: [],
+  };
+
+  const panel = { el: null, button: null, open: false };
+
+  function engineCatalogue() {
+    return [BROWSER_ENGINE, ...state.serverEngines];
+  }
+
+  // An engine the catalogue does not have is reported as itself-but-unusable,
+  // not silently swapped for the browser one: the picker would otherwise claim
+  // a setting is active when requests are actually being refused.
+  function engineByName(name) {
+    return (
+      engineCatalogue().find((e) => e.name === name) || {
+        name,
+        label: name,
+        ready: false,
+        error: "เซิร์ฟเวอร์ไม่มีเครื่องมือเสียงนี้",
+        voices: [],
+      }
+    );
+  }
+
+  // Re-asked every time the settings are opened, not just once at page load:
+  // the server is frequently started *after* the Udemy tab is already sitting
+  // there, and a list fetched before that would stay empty forever.
+  async function loadServerEngines() {
+    try {
+      const health = await chrome.runtime.sendMessage({ type: "health" });
+      state.serverEngines = (health && health.ok && health.voices) || [];
+      state.serverReachable = Boolean(health && health.ok);
+    } catch {
+      state.serverEngines = [];
+      state.serverReachable = false;
+    }
+    if (panel.el) renderPanel();
+  }
+
+  // What to tell the user when the picker has nothing useful in it. An empty
+  // dropdown with no explanation is the worst possible outcome here.
+  function engineHint() {
+    if (!state.serverReachable) {
+      return "ต่อเซิร์ฟเวอร์แปลไม่ได้ — เปิด start-server.cmd แล้วเปิดการตั้งค่านี้ใหม่";
+    }
+    if (!state.serverEngines.length) {
+      return "เซิร์ฟเวอร์ยังไม่ส่งรายการเสียงมา — เป็นเวอร์ชันเก่า ปิดแล้วเปิด start-server.cmd ใหม่";
+    }
+    const engine = engineByName(state.ttsEngine);
+    if (!engine.ready && engine.error) return engine.error;
+    return "";
+  }
+
+  // The control appears as one button in the player's own control bar, next to
+  // the site's native buttons, and opens a menu above itself — the same shape
+  // the player's own settings button already has, so it needs no explaining.
+  //
+  // Nothing is drawn over the picture: an always-present panel floating on the
+  // video is in the way of the thing you are trying to watch.
+  function ensurePanel() {
+    if (panel.button && panel.button.isConnected && panel.el && panel.el.isConnected) {
+      return panel.el;
+    }
+    if (!state.video) return null;
+
+    const host = site.playerContainer() || state.video.parentElement;
+    if (!host) return null;
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+
+    removePanel();
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "udth-pill";
+    button.dataset.udth = "settings";
+    button.setAttribute("aria-label", "ซับไทยและเสียงพากย์");
+    button.title = "ซับไทยและเสียงพากย์";
+    // A glyph in the same family as the player's own icons (ก → A), not a word
+    // floating on its own. The state dot says whether anything is switched on.
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">' +
+      '<rect x="2.5" y="3.5" width="19" height="17" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+      '<path d="M6.800 9.200h5.400M9.500 9.200v.8c0 1.700-.9 3.200-2.600 4M9.600 11.800c.6 1 1.500 1.700 2.600 2.100" ' +
+      'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M13.300 16l2.300-6.300 2.300 6.300M14.100 14h3" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '<i class="udth-dot" aria-hidden="true"></i>';
+
+    // Parked in the corner to begin with; dockButton moves it into the real
+    // control bar as soon as one exists. Udemy builds its bar well after the
+    // <video> element, so at this moment there is usually nothing to dock to.
+    button.classList.add("udth-pill-floating");
+    host.appendChild(button);
+    dockButton(button);
+
+    const el = document.createElement("div");
+    el.className = "udth-menu";
+    el.hidden = true;
+    const version = (() => {
+      try {
+        return chrome.runtime.getManifest().version;
+      } catch {
+        return "";
+      }
+    })();
+    el.innerHTML =
+      '<div class="udth-menu-head">' +
+      '<div class="udth-logo" aria-hidden="true">ท</div>' +
+      '<div class="udth-menu-titles"><div class="udth-menu-title">ฮองเรียน</div>' +
+      '<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>ไทย</div></div>' +
+      `<span class="udth-ver">v${version}</span></div>` +
+      '<div class="udth-row-label">ซับบนวิดีโอ</div>' +
+      '<div class="udth-seg" role="group" aria-label="ซับบนวิดีโอ">' +
+      '<button type="button" data-udth="mode" data-val="off">ปิด</button>' +
+      '<button type="button" data-udth="mode" data-val="th">ไทย</button>' +
+      '<button type="button" data-udth="mode" data-val="both">ไทย + EN</button></div>' +
+      '<div class="udth-row-label">ขนาดตัวอักษร</div>' +
+      '<div class="udth-seg" role="group" aria-label="ขนาดตัวอักษร">' +
+      '<button type="button" data-udth="size" data-val="s">เล็ก</button>' +
+      '<button type="button" data-udth="size" data-val="m">กลาง</button>' +
+      '<button type="button" data-udth="size" data-val="l">ใหญ่</button></div>' +
+      '<button type="button" class="udth-dubrow" data-udth="dub" aria-pressed="false">' +
+      '<span class="udth-dubrow-txt"><b>พากย์เสียงไทย</b><small data-state="dub">ปิด</small></span>' +
+      '<span class="udth-switch" aria-hidden="true"></span></button>' +
+      '<details class="udth-adv"><summary>ตั้งค่าเสียงขั้นสูง</summary>' +
+      '<div class="udth-card">' +
+      '<label class="udth-field"><span>เครื่องมือเสียง</span><select data-udth="engine"></select></label>' +
+      '<label class="udth-field"><span>เลือกเสียง</span><select data-udth="voice"></select></label>' +
+      '<label class="udth-field"><span>เสียงพากย์</span>' +
+      '<input type="range" min="0" max="1" step="0.05" data-udth="dubVol"><output data-udth="dubVolOut"></output></label>' +
+      '<label class="udth-field"><span>เสียงต้นฉบับ</span>' +
+      '<input type="range" min="0" max="1" step="0.05" data-udth="srcVol"><output data-udth="srcVolOut"></output></label>' +
+      '<label class="udth-field"><span>เร่งเสียงได้สูงสุด</span>' +
+      '<input type="range" min="1" max="2" step="0.05" data-udth="rate"><output data-udth="rateOut"></output></label>' +
+      "</div></details>" +
+      '<div class="udth-menu-actions">' +
+      '<button type="button" class="udth-btn" data-udth="retry">↻ แปลใหม่</button>' +
+      '<button type="button" class="udth-btn udth-btn-primary" data-udth="section">แปลทั้ง Section</button>' +
+      "</div>" +
+      '<div class="udth-panel-note"></div>';
+
+    host.appendChild(el);
+    panel.button = button;
+    panel.el = el;
+    wirePanel(el);
+    wirePanel(button);
+    return el;
+  }
+
+  // Move the button into the player's control bar once that bar exists.
+  //
+  // Split out from ensurePanel because the bar is built later than the <video>
+  // element on both sites — on Udemy by a wide margin. Creating the button and
+  // docking it are therefore separate events, and docking has to keep being
+  // retried. Leaving it parked in the corner forever was the bug.
+  function dockButton(button) {
+    const visible = (el) => el.offsetWidth > 0 && el.offsetHeight > 0;
+    // Docked somewhere real already. A button that exists but measures 0x0 is
+    // sitting inside a hidden menu — measured on the live Udemy page, where
+    // `[data-purpose*="settings"]` also matched "go-to-settings", an item in
+    // the closed settings dropdown, and the button vanished into it.
+    if (button.isConnected && !button.classList.contains("udth-pill-floating") && visible(button)) {
+      return true;
+    }
+
+    const root = (() => {
+      let el = state.video;
+      for (let i = 0; i < 8 && el && el.parentElement; i += 1) el = el.parentElement;
+      return el || document;
+    })();
+
+    // Exact names first (Udemy), then the aria-labels of both languages, then
+    // YouTube. Every candidate must be on screen and outside any menu.
+    const anchors = [
+      '[data-purpose="settings-button"]',
+      '[data-purpose="captions-dropdown-button"]',
+      '[data-purpose="theatre-mode-toggle-button"]',
+      '[data-purpose="fullscreen-toggle"]',
+      'button[aria-label="การตั้งค่า"]',
+      'button[aria-label="คำบรรยาย"]',
+      'button[aria-label="เข้าสู่เต็มหน้าจอ"]',
+      'button[aria-label="Settings"]',
+      'button[aria-label="Captions"]',
+      ".ytp-settings-button",
+    ];
+    for (const selector of anchors) {
+      const found = [...root.querySelectorAll(selector)].find(
+        (el) => visible(el) && !el.closest('[class*="dropdown-menu"], [role="menu"], ul')
+      );
+      if (!found) continue;
+      let native = found;
+      // Step up while the control is alone in its wrapper (Udemy wraps each
+      // button in a popper div) so we land among its peers, not inside one.
+      while (native.parentElement && native.parentElement.children.length < 2) {
+        native = native.parentElement;
+      }
+      const bar = native.parentElement;
+      if (!bar || bar === document.body || bar.contains(state.video)) continue;
+      bar.insertBefore(button, native);
+      button.classList.remove("udth-pill-floating");
+      button.classList.add("udth-tool");
+      log("วางปุ่มไว้ข้างเครื่องมือของเพลเยอร์:", selector);
+      return true;
+    }
+
+    const bar = site.controlBar();
+    if (!bar || !visible(bar)) return false;
+    bar.insertBefore(button, bar.firstChild);
+    button.classList.remove("udth-pill-floating");
+    button.classList.add("udth-tool");
+    return true;
+  }
+
+  function panelEl(key) {
+    return panel.el && panel.el.querySelector(`[data-udth="${key}"]`);
+  }
+
+  // Clicking the video to pause it should also put the menu away, the way the
+  // player's own menus behave.
+  function closeMenuOnOutsideClick(event) {
+    if (!panel.open || !panel.el) return;
+    if (panel.el.contains(event.target) || (panel.button && panel.button.contains(event.target))) {
+      return;
+    }
+    panel.open = false;
+    renderPanel();
+  }
+  document.addEventListener("click", closeMenuOnOutsideClick, true);
+
+  function fillEngines(selected) {
+    const select = panelEl("engine");
+    if (!select) return;
+    select.innerHTML = "";
+    for (const engine of engineCatalogue()) {
+      // An unusable engine is listed with its reason rather than hidden —
+      // hiding it just makes a supported option look like it does not exist.
+      const suffix = engine.ready ? "" : " — ยังตั้งค่าไม่ครบ";
+      select.add(new Option(engine.label + suffix, engine.name));
+    }
+    // The saved engine can be one the server has not offered — it was stored
+    // before the server was restarted, or the server is down entirely. Keep it
+    // visible rather than leaving the box blank with no explanation.
+    if (![...select.options].some((o) => o.value === selected)) {
+      select.add(new Option(`${selected} — ยังไม่พร้อมใช้`, selected));
+    }
+    select.value = selected;
+  }
+
+  function fillVoices(engineName, selected) {
+    const select = panelEl("voice");
+    if (!select) return;
+
+    const engine = engineByName(engineName);
+    const voices =
+      engineName === "windows"
+        ? state.nativeVoices.map((v) => ({ id: v.name, label: v.name }))
+        : engine.voices || [];
+
+    select.innerHTML = "";
+    if (!voices.length) {
+      select.add(
+        new Option(
+          engineName === "windows"
+            ? "เลือกอัตโนมัติ (รอ Windows โหลดเสียง)"
+            : "เครื่องมือนี้ยังใช้ไม่ได้",
+          ""
+        )
+      );
+    } else {
+      voices.forEach((v) => select.add(new Option(v.label, v.id)));
+    }
+    if ([...select.options].some((o) => o.value === selected)) select.value = selected;
+    else if (select.options.length) select.selectedIndex = 0;
+  }
+
+  // One writer for every setting, so the panel, the popup and storage can never
+  // drift apart: whatever the panel shows is what was just persisted.
+  async function commitOptions(changes) {
+    Object.assign(state, changes);
+    if (changes.ttsEngine !== undefined || changes.ttsVoice !== undefined) {
+      stopDubbing();
+      resetAudioCache();
+    }
+    if (changes.dubbingEnabled === false) stopDubbing();
+
+    syncDubbingVolume();
+    if (state.overlay) state.overlay.style.display = state.enabled ? "" : "none";
+    syncNativeCaptions();
+    if (state.status === "ready") {
+      resyncDub();
+      if (state.dubbingEnabled) prefetchAudio(state.dub.cursor);
+    }
+    state.activeIndex = -1;
+    onTimeUpdate();
+    renderPanel();
+
+    try {
+      await chrome.storage.local.set({
+        enabled: state.enabled,
+        dualMode: state.dualMode,
+        capSize: state.capSize,
+        dubbingEnabled: state.dubbingEnabled,
+        ttsEngine: state.ttsEngine,
+        ttsVoice: state.ttsVoice,
+        dubbingVolume: state.dubbingVolume,
+        originalAudioVolume: state.originalAudioVolume,
+        dubRateCap: state.dubRateCap,
+      });
+    } catch {
+      /* storage unavailable — the settings still apply to this page */
+    }
+  }
+
+  function wirePanel(el) {
+    el.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-udth]");
+      if (!button || button.tagName !== "BUTTON") return;
+      // The button sits inside the player's control bar, and both players
+      // treat stray clicks on themselves as play/pause. Without this, opening
+      // the menu would also pause the lecture.
+      event.stopPropagation();
+      event.preventDefault();
+
+      const action = button.dataset.udth;
+      const val = button.dataset.val;
+      if (action === "mode") {
+        commitOptions(
+          val === "off"
+            ? { enabled: false }
+            : { enabled: true, dualMode: val === "both" }
+        );
+      } else if (action === "size") commitOptions({ capSize: val });
+      else if (action === "dub") commitOptions({ dubbingEnabled: !state.dubbingEnabled });
+      else if (action === "settings") {
+        panel.open = !panel.open;
+        renderPanel();
+        // The server is often started after the tab is already open, so the
+        // list is refetched here rather than trusted from page load.
+        if (panel.open) loadServerEngines();
+      } else if (action === "retry") retranslateHere();
+      else if (action === "section") {
+        setPanelNote("กำลังเตรียมคิว ...");
+        translateSection()
+          .then((res) => setPanelNote(res.ok ? "ส่งเข้าคิวแล้ว" : res.error, !res.ok))
+          .catch((err) => setPanelNote(describeTranslateError(err), true));
+      }
+    });
+
+    el.addEventListener("change", (event) => {
+      const key = event.target.dataset.udth;
+      if (key === "engine") {
+        const engine = event.target.value;
+        fillVoices(engine, "");
+        // Switching engine invalidates the old voice: voice ids are what route
+        // a request to its engine, so keeping one would send it to the old one.
+        commitOptions({ ttsEngine: engine, ttsVoice: panelEl("voice").value || "" });
+      } else if (key === "voice") {
+        commitOptions({ ttsVoice: event.target.value });
+      }
+    });
+
+    el.addEventListener("input", (event) => {
+      const key = event.target.dataset.udth;
+      const value = Number(event.target.value);
+      if (key === "dubVol") commitOptions({ dubbingVolume: value });
+      else if (key === "srcVol") commitOptions({ originalAudioVolume: value });
+      else if (key === "rate") commitOptions({ dubRateCap: value });
+    });
+  }
+
+  function setPanelNote(text, isError = false) {
+    const note = panel.el && panel.el.querySelector(".udth-panel-note");
+    if (!note) return;
+    note.textContent = text || "";
+    note.classList.toggle("udth-panel-note-error", Boolean(isError));
+  }
+
+  async function retranslateHere() {
+    const id = site.cacheId();
+    if (id) {
+      try {
+        await chrome.storage.local.set({ forceLecture: String(id) });
+      } catch {
+        /* without the flag the reload just reuses the cache */
+      }
+    }
+    location.reload();
+  }
+
+  function renderPanel() {
+    const el = ensurePanel();
+    if (!el) return;
+
+    const mode = !state.enabled ? "off" : state.dualMode ? "both" : "th";
+    for (const b of el.querySelectorAll('[data-udth="mode"]')) {
+      const on = b.dataset.val === mode;
+      b.classList.toggle("udth-seg-on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    for (const b of el.querySelectorAll('[data-udth="size"]')) {
+      const on = b.dataset.val === state.capSize;
+      b.classList.toggle("udth-seg-on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    const dub = el.querySelector('[data-udth="dub"]');
+    dub.classList.toggle("udth-dubrow-on", state.dubbingEnabled);
+    el.querySelector('[data-state="dub"]').textContent = state.dubbingEnabled ? "เปิดอยู่" : "ปิด";
+    dub.setAttribute("aria-pressed", String(state.dubbingEnabled));
+    if (state.overlay) state.overlay.dataset.size = state.capSize;
+
+    // The button carries the state, so what is on is readable without opening
+    // anything — the same job the player's own CC button does.
+    panel.button.classList.toggle("udth-pill-on", state.enabled || state.dubbingEnabled);
+    panel.button.classList.toggle("udth-pill-open", panel.open);
+    panel.button.setAttribute("aria-expanded", String(panel.open));
+
+    el.hidden = !panel.open;
+    if (!panel.open) return;
+
+    panelEl("src").textContent = state.sourceLang;
+    fillEngines(state.ttsEngine);
+    fillVoices(state.ttsEngine, state.ttsVoice);
+    const hint = engineHint();
+    if (hint) setPanelNote(hint, true);
+    else if (panel.el.querySelector(".udth-panel-note-error")) setPanelNote("");
+    panelEl("dubVol").value = String(state.dubbingVolume);
+    panelEl("dubVolOut").value = `${Math.round(state.dubbingVolume * 100)}%`;
+    panelEl("srcVol").value = String(state.originalAudioVolume);
+    panelEl("srcVolOut").value = `${Math.round(state.originalAudioVolume * 100)}%`;
+    panelEl("rate").value = String(state.dubRateCap);
+    panelEl("rateOut").value = `${state.dubRateCap.toFixed(2)}x`;
+    panelEl("section").hidden = !site.supportsSection;
+  }
+
+  function removePanel() {
+    if (panel.el) panel.el.remove();
+    if (panel.button) panel.button.remove();
+    panel.el = null;
+    panel.button = null;
+    panel.open = false;
+  }
+
+  // ------------------------------------------------------------ loading gate
+  //
+  // Translation takes tens of seconds on a cold lecture. Letting the video run
+  // through it means the first minute is watched with no Thai at all, so the
+  // player is held until the subtitles exist — the same bargain other dubbing
+  // extensions make. The escape hatch is deliberate: a wedged server must never
+  // leave the page unusable.
+
+  const gate = { el: null, video: null, hold: null, skipped: false, wasPlaying: false };
+
+  function ensureGate() {
+    if (gate.el && gate.el.isConnected) return gate.el;
+
+    const el = document.createElement("div");
+    el.className = "udth-gate";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    el.innerHTML =
+      '<div class="udth-gate-card">' +
+      '<div class="udth-gate-spinner"></div>' +
+      '<div class="udth-gate-title"></div>' +
+      '<div class="udth-gate-detail"></div>' +
+      '<button type="button" class="udth-gate-skip">ข้ามการรอ แล้วดูไปก่อน</button>' +
+      "</div>";
+    // A fixed element outside the fullscreen subtree is not painted while the
+    // player is fullscreen, so the gate has to live inside it.
+    (document.fullscreenElement || document.body).appendChild(el);
+    el.querySelector(".udth-gate-skip").addEventListener("click", () => {
+      gate.skipped = true;
+      hideGate();
+    });
+    gate.el = el;
+    return el;
+  }
+
+  // Pausing once is not enough: Udemy's own player, and the user, can both
+  // start playback again while we are still waiting.
+  function showGate(title, detail = "", kind = "info") {
+    if (gate.skipped) return;
+    const el = ensureGate();
+    el.querySelector(".udth-gate-title").textContent = title;
+    el.querySelector(".udth-gate-title").style.color = kind === "error" ? "#fb7185" : "";
+    const detailEl = el.querySelector(".udth-gate-detail");
+    detailEl.textContent = detail;
+    detailEl.style.display = detail ? "" : "none";
+
+    const spinner = el.querySelector(".udth-gate-spinner");
+    if (spinner) spinner.style.display = kind === "error" ? "none" : "";
+
+    const video = state.video;
+    if (video && gate.video !== video) {
+      releaseGateHold();
+      gate.video = video;
+      gate.wasPlaying = !video.paused;
+      gate.hold = () => {
+        gate.wasPlaying = true;
+        video.pause();
+      };
+      video.addEventListener("play", gate.hold);
+    }
+    if (gate.video) gate.video.pause();
+  }
+
+  function releaseGateHold() {
+    const video = gate.video;
+    if (video && gate.hold) video.removeEventListener("play", gate.hold);
+    gate.video = null;
+    gate.hold = null;
+    if (video && gate.wasPlaying) video.play().catch(() => {});
+    gate.wasPlaying = false;
+  }
+
+  function hideGate() {
+    releaseGateHold();
+    if (gate.el) gate.el.remove();
+    gate.el = null;
+  }
+
+  // ------------------------------------------------------------- Thai audio
+
+  // Free, needs no setup, and the same neural voice Windows exposes locally.
+  const DEFAULT_TTS_VOICE = "th-TH-NiwatNeural";
+  // Google synthesis is not instantaneous, so keep a few segments buffered.
+  const PREFETCH_AHEAD = 4;
+  // A merged sentence is cut here even with no full stop in sight, so one
+  // run-on passage cannot swallow a minute of speech into a single utterance.
+  const MAX_SEGMENT_SECONDS = 14;
+  // A pause this long between cues reads as a sentence break on its own.
+  const SEGMENT_GAP_SECONDS = 1.2;
+  // How late a segment may still begin. Past this the video has moved on and
+  // speaking it would talk over what comes next, so it is dropped.
+  const DUB_LATE_TOLERANCE = 2.5;
+  // `timeupdate` fires about four times a second, so a segment is noticed up to
+  // 250ms after it should have started; starting this early cancels the average
+  // of that out instead of letting it read as lag.
+  const DUB_START_LEAD = 0.25;
+  // Windows voices report no duration up front. Rough measured pace of Thai
+  // TTS, used only to decide how much to speed an utterance up.
+  const THAI_CHARS_PER_SECOND = 12;
+
+  // Udemy's caption cues are display fragments: three or four words, wrapped to
+  // fit the screen and routinely cut mid-sentence. Dubbing them one-for-one is
+  // what made the audio sound broken — every fragment became its own utterance,
+  // and the next fragment's clock arrived long before the Thai sentence had
+  // finished being said.
+  //
+  // So the dub runs on its own track, rebuilt by merging consecutive cues back
+  // into sentences. Sentence boundaries are taken from the English, which has
+  // the punctuation Thai output usually lacks.
+  function endsSentence(text) {
+    return /[.!?][")'\]]?\s*$/.test(text || "");
+  }
+
+  function buildDubSegments(cues) {
+    const segments = [];
+    let current = null;
+
+    const flush = () => {
+      if (current) segments.push(current);
+      current = null;
+    };
+
+    for (const cue of cues) {
+      const th = (cue.th || "").trim();
+      if (!th) continue;
+
+      const breaks =
+        current &&
+        (cue.start - current.end > SEGMENT_GAP_SECONDS ||
+          cue.end - current.start > MAX_SEGMENT_SECONDS);
+      if (breaks) flush();
+
+      if (current) {
+        current.text += " " + th;
+        current.end = cue.end;
+      } else {
+        current = { start: cue.start, end: cue.end, text: th };
+      }
+      if (endsSentence(cue.en)) flush();
+    }
+    flush();
+
+    // The real budget for a sentence is not when its subtitle disappears — it
+    // is when the next sentence has to start. Instructors pause between
+    // sentences, and spending that pause is what keeps the dub level with them
+    // instead of drifting a little further behind on every line.
+    segments.forEach((segment, n) => {
+      const next = segments[n + 1];
+      segment.budgetEnd = next ? next.start : segment.end + 3;
+    });
+    return segments;
+  }
+
+  function stopDubbing() {
+    // Invalidate every in-flight callback before tearing anything down, so a
+    // late `onended` cannot resume the scheduler after we asked it to stop.
+    state.dub.token += 1;
+    state.dub.playing = false;
+    if (state.nativeSpeech) {
+      window.speechSynthesis.cancel();
+      state.nativeSpeech = false;
+    }
+    if (!state.audio) return;
+    state.audio.pause();
+    state.audio = null;
+  }
+
+  // After a seek the cursor must point at the segment covering the new time,
+  // not wherever playback happened to be.
+  function resyncDub() {
+    stopDubbing();
+    const now = (state.video && state.video.currentTime) || 0;
+    const segments = state.dub.segments;
+    let i = 0;
+    while (i < segments.length && segments[i].end <= now) i += 1;
+    state.dub.cursor = i;
+  }
+
+  // Requests cannot be aborted reliably once a service worker has passed them
+  // to the local server. A generation token makes every old completion inert
+  // after a seek, lecture change, or voice/engine switch.
+  function resetAudioCache() {
+    state.audioGeneration += 1;
+    // These are blob URLs, and a blob stays in memory until its last URL is
+    // revoked. A three-hour course would otherwise end holding every line it
+    // ever spoke.
+    state.audioUrls.forEach((url) => URL.revokeObjectURL(url));
+    state.audioUrls.clear();
+    state.audioPending.clear();
+    state.audioElements.clear();
+  }
+
+  // The audio arrives as bytes rather than as a URL to fetch, because the page
+  // is not always allowed to reach the local server — see synthesizeSpeech in
+  // background.js. Turning it into a blob gives back a URL the page owns
+  // outright, so playback no longer depends on a per-site permission.
+  function blobUrl(data) {
+    const binary = atob(data.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: data.type || "audio/mpeg" }));
+  }
+
+  // Knowing the URL is not the same as being ready to play it: the browser
+  // still has to fetch and decode the MP3, which is long enough to hear as lag.
+  // Decoding it during prefetch means playback starts on the same tick it is
+  // asked for.
+  function preloadAudio(index, url) {
+    if (!url || state.audioElements.has(index)) return;
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.src = url;
+    audio.load();
+    state.audioElements.set(index, audio);
+  }
+
+  function syncDubbingVolume() {
+    if (!state.video) return;
+    if (state.dubbingEnabled) {
+      if (state.sourceVolume === null) state.sourceVolume = state.video.volume;
+      state.video.volume = state.originalAudioVolume;
+    } else if (state.sourceVolume !== null) {
+      state.video.volume = state.sourceVolume;
+      state.sourceVolume = null;
+    }
+  }
+
+  async function audioUrlFor(index) {
+    const segment = state.dub.segments[index];
+    if (!segment || !segment.text) return null;
+    if (state.audioUrls.has(index)) return state.audioUrls.get(index);
+    if (state.audioPending.has(index)) return state.audioPending.get(index);
+
+    const generation = state.audioGeneration;
+    const request = chrome.runtime
+      .sendMessage({
+        type: "synthesizeSpeech",
+        payload: { text: segment.text, voice: state.ttsVoice || DEFAULT_TTS_VOICE },
+      })
+      .then((res) => {
+        if (!res || !res.ok) throw new Error((res && res.error) || "สร้างเสียงไม่สำเร็จ");
+        // Checked before the blob is built, so a stale reply allocates nothing.
+        if (generation !== state.audioGeneration) return null;
+        const url = blobUrl(res.data);
+        state.audioUrls.set(index, url);
+        preloadAudio(index, url);
+        return url;
+      })
+      .finally(() => {
+        // Never erase the newer request for the same cue.
+        if (generation === state.audioGeneration) state.audioPending.delete(index);
+      });
+    state.audioPending.set(index, request);
+    return request;
+  }
+
+  function prefetchAudio(index) {
+    if (!state.dubbingEnabled || state.ttsEngine === "windows") return;
+    const last = Math.min(state.dub.segments.length, index + PREFETCH_AHEAD);
+    for (let i = Math.max(0, index); i < last; i += 1) {
+      audioUrlFor(i).catch((err) => log("สร้างเสียงล่วงหน้าไม่สำเร็จ", err));
+    }
+  }
+
+  // How fast this utterance has to be spoken to land inside the window it has
+  // left. Watching at 1.5x shrinks that window in real time, so the video's own
+  // speed raises the ceiling too — someone already listening fast expects it.
+  function fitRate(durationSeconds, segment) {
+    const speed = (state.video && state.video.playbackRate) || 1;
+    const cap = state.dubRateCap * speed;
+    const remaining = (segment.budgetEnd - state.video.currentTime) / speed;
+    if (!(durationSeconds > 0) || !(remaining > 0)) return cap;
+    return Math.max(1, Math.min(cap, durationSeconds / remaining));
+  }
+
+  // The scheduler. Called on every timeupdate and again whenever an utterance
+  // ends — never on a cue boundary, which is what used to cut speech off.
+  function tickDubbing() {
+    if (!state.dubbingEnabled) return;
+    if (!state.video || state.video.paused || state.video.ended) return;
+
+    if (state.dub.playing) {
+      // Chrome drops `onend` on long speechSynthesis utterances, and a stalled
+      // MP3 never fires `ended` either. Without this the flag would stay set
+      // and the rest of the lecture would play silent.
+      if (Date.now() < state.dub.deadline) return;
+      log("เสียงพากย์ค้าง — ข้ามไปประโยคถัดไป");
+      stopDubbing();
+    }
+
+    const segments = state.dub.segments;
+    const now = state.video.currentTime;
+
+    // Skip anything the video has already run past — a sentence spoken this
+    // late would be talking over the one after it.
+    while (
+      state.dub.cursor < segments.length &&
+      now > segments[state.dub.cursor].end + DUB_LATE_TOLERANCE
+    ) {
+      state.dub.cursor += 1;
+    }
+
+    const index = state.dub.cursor;
+    const segment = segments[index];
+    if (!segment || now < segment.start - DUB_START_LEAD) return;
+
+    state.dub.cursor = index + 1;
+    prefetchAudio(index + 1);
+    speakSegment(index, segment);
+  }
+
+  async function speakSegment(index, segment) {
+    const token = (state.dub.token += 1);
+    state.dub.playing = true;
+    // Replaced with a real figure as soon as one is known; until then this is
+    // only a ceiling on how long a wedged utterance can block the queue.
+    state.dub.deadline = Date.now() + 45000;
+    const setDeadline = (seconds, rate) => {
+      state.dub.deadline = Date.now() + ((seconds / rate) + 5) * 1000;
+    };
+
+    // One exit for every outcome — ended, failed, or never started. Missing any
+    // of them would leave `playing` stuck true and silence the rest of the
+    // lecture, so the scheduler is always re-armed from here.
+    const finish = () => {
+      if (state.dub.token !== token) return;
+      state.dub.playing = false;
+      state.nativeSpeech = false;
+      state.audio = null;
+      tickDubbing();
+    };
+
+    if (state.ttsEngine === "windows") {
+      const utterance = new SpeechSynthesisUtterance(segment.text);
+      const voices = window.speechSynthesis.getVoices();
+      const chosen = voices.find((voice) => voice.name === state.ttsVoice);
+      // Windows exposes its cloud-backed voices as "Online (Natural)". Prefer
+      // them but degrade gracefully to any installed Thai voice.
+      utterance.voice = chosen || voices.find(
+        (voice) => /^th(?:-|_)/i.test(voice.lang) && /natural|online/i.test(voice.name)
+      ) || voices.find((voice) => /^th(?:-|_)/i.test(voice.lang)) || null;
+      utterance.lang = "th-TH";
+      utterance.volume = state.dubbingVolume;
+      const spoken = segment.text.length / THAI_CHARS_PER_SECOND;
+      utterance.rate = fitRate(spoken, segment);
+      setDeadline(spoken, utterance.rate);
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      state.nativeSpeech = true;
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
+
+    let url = state.audioUrls.get(index);
+    if (!url) {
+      // Waiting on synthesis is better than dropping the line silently, which
+      // is what the old code did whenever the buffer had not caught up.
+      try {
+        url = await audioUrlFor(index);
+      } catch (err) {
+        log("สร้างเสียงไม่สำเร็จ", err);
+        renderStatus(
+          `ซับพร้อมแล้ว แต่พากย์เสียงไม่ได้: ${String(err.message || err).slice(0, 90)}`,
+          "error"
+        );
+        finish();
+        return;
+      }
+      if (state.dub.token !== token) return;
+      // Synthesis may have taken long enough that this sentence is now stale.
+      if (!url || state.video.currentTime > segment.end + DUB_LATE_TOLERANCE) {
+        finish();
+        return;
+      }
+    }
+
+    // Prefer the element prefetch already decoded; only build one from scratch
+    // when this segment was reached before the buffer got to it.
+    const audio = state.audioElements.get(index) || new Audio(url);
+    state.audioElements.delete(index);
+    try {
+      audio.currentTime = 0;
+    } catch {
+      /* not seekable yet — it starts at zero anyway */
+    }
+    audio.volume = state.dubbingVolume;
+    // Without this Chrome shifts pitch along with rate and the voice squeaks.
+    audio.preservesPitch = true;
+    audio.onended = finish;
+    audio.onerror = finish;
+
+    const applyRate = () => {
+      if (state.dub.token !== token || !(audio.duration > 0)) return;
+      audio.playbackRate = fitRate(audio.duration, segment);
+      setDeadline(audio.duration, audio.playbackRate);
+    };
+    // A preloaded element already has its metadata, and `loadedmetadata` has
+    // then long since fired — so the rate must be applied directly as well.
+    if (audio.readyState >= 1) applyRate();
+    else audio.addEventListener("loadedmetadata", applyRate);
+
+    // An element that neither loads nor errors is otherwise invisible: the
+    // 45-second watchdog eventually steps over it and the only symptom is
+    // silence. That is exactly how a browser-level block on reaching the local
+    // server looked, and it cost a long hunt through the speech engines to
+    // find. Say so instead.
+    const stalled = setTimeout(() => {
+      if (state.dub.token === token && audio.readyState < 1) {
+        log("เสียงโหลดไม่ขึ้นและไม่แจ้ง error", {
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+          src: String(audio.src).slice(0, 60),
+        });
+      }
+    }, 3000);
+    const clearStall = () => clearTimeout(stalled);
+    audio.addEventListener("loadedmetadata", clearStall);
+    audio.addEventListener("error", clearStall);
+
+    state.audio = audio;
+    try {
+      await audio.play();
+    } catch (err) {
+      log("พากย์เสียงไม่ได้", err);
+      finish();
+    }
   }
 
   // -------------------------------------------------------- in-player panel
@@ -1350,9 +2327,9 @@
     name: "udemy",
     supportsSection: true,
 
-    pageKey: () => lectureId() || quizId(),
+    pageKey: () => lectureId() || quizId() || (assignmentId() ? assignmentId() + location.pathname : null),
     cacheScope: courseSlug,
-    cacheId: () => lectureId() || (quizId() ? `quiz-${quizId()}` : null),
+    cacheId: () => lectureId() || (quizId() ? `quiz-${quizId()}` : (assignmentId() ? `assignment-${assignmentId()}` : null)),
     title: lessonTitle,
     playerContainer: () => null, // the overlay anchors to the video's parent
 
@@ -1361,16 +2338,18 @@
     // The anchor search is kept as a last resort for builds that drop it.
     controlBar() {
       return (
+        document.querySelector('[data-purpose="video-control-bar"]') ||
         document.querySelector('[data-purpose="video-controls"]') ||
-        document.querySelector('[data-purpose="video-control-bar"] [data-purpose="video-controls"]') ||
         findControlBarNear(document.querySelector("video"))
       );
     },
 
     async describe() {
-      // Quiz pages carry no lecture id, so they must be detected first.
+      // Quiz and Assignment pages carry no lecture id, so they must be detected first.
       const quiz = quizId();
       if (quiz) return { kind: "quiz", payload: quiz };
+      const assignment = assignmentId();
+      if (assignment) return { kind: "assignment", payload: assignment };
 
       const asset = await fetchLectureAsset();
       log("ชนิดบทเรียน", asset.type || "(ไม่ระบุ)");
@@ -1384,8 +2363,124 @@
 
   // --------------------------------------------------------------- sync loop
 
+  // Udemy cuts captions into 3-5 word display fragments, often mid-clause
+  // ("...another tutorial on this section where we are covering"). Shown one by
+  // one, the Thai changes every second or two and each piece starts and ends in
+  // the middle of a thought, which is what makes it so hard to read. The
+  // viewer therefore shows whole sentences: consecutive fragments are merged
+  // using the English punctuation, and each sentence stays up for as long as it
+  // is being spoken. Long sentences are split at a fragment boundary, never in
+  // the middle of one, so no word is ever cut.
+  // Captions are built in two steps. First fragments are merged back into whole
+  // sentences, however long. Then each sentence is cut into display chunks at
+  // *word* boundaries so no chunk is more than two lines, with the sentence's
+  // time shared out by how much text each chunk holds. Cutting by cue instead
+  // (the old way) left chunks that stopped mid-clause ("...เทียบกับค่าใน").
+  const VIEW_CHUNK_CHARS = 58; // two lines of Thai at the caption width
+  const VIEW_MAX_SENTENCE_SECONDS = 16;
+  const VIEW_BRIDGE_GAP = 0.6; // keep a caption up across a tiny pause: no flicker
+  const view = { src: null, len: -1, cues: [] };
+
+  const segmenter =
+    typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter("th", { granularity: "word" }) : null;
+
+  // Thai has no spaces between words. The browser's own line breaking split
+  // words in half ("ตรวจ" / "สอบ"), so words are found here and each one is
+  // kept whole when drawn.
+  function thaiWords(text) {
+    if (!segmenter) return text.split(/(\s+)/).filter(Boolean);
+    return [...segmenter.segment(text)].map((p) => p.segment);
+  }
+
+  function splitEvenly(words, maxChars) {
+    const total = words.reduce((n, w) => n + w.length, 0);
+    if (total <= maxChars) return [words];
+    const parts = Math.ceil(total / maxChars);
+    const target = total / parts;
+    const chunks = [];
+    let cur = [];
+    let curLen = 0;
+    for (const w of words) {
+      cur.push(w);
+      curLen += w.length;
+      // Prefer to break right after a space or a closing bracket.
+      const soft = /\s$|[)\]]$/.test(w);
+      if (chunks.length < parts - 1 && (curLen >= target * 1.05 || (soft && curLen >= target * 0.85))) {
+        chunks.push(cur);
+        cur = [];
+        curLen = 0;
+      }
+    }
+    if (cur.length) chunks.push(cur);
+    return chunks;
+  }
+
+  function buildViewCues(cues) {
+    const sentences = [];
+    let cur = null;
+    const flush = () => {
+      if (cur) sentences.push(cur);
+      cur = null;
+    };
+    for (const cue of cues) {
+      const th = (cue.th || "").trim();
+      const en = (cue.en || "").trim();
+      if (!th && !en) continue;
+      if (cur && (cue.start - cur.end > 1.2 || cue.end - cur.start > VIEW_MAX_SENTENCE_SECONDS)) flush();
+      if (cur) {
+        cur.th = (cur.th + " " + th).trim();
+        cur.en = (cur.en + " " + en).trim();
+        cur.end = cue.end;
+      } else {
+        cur = { start: cue.start, end: cue.end, th, en };
+      }
+      if (endsSentence(en) && cur.th.length >= 8) flush();
+    }
+    flush();
+
+    const out = [];
+    for (const sentence of sentences) {
+      const chunks = splitEvenly(thaiWords(sentence.th), VIEW_CHUNK_CHARS);
+      const enWords = sentence.en.split(/\s+/).filter(Boolean);
+      const total = chunks.reduce((n, c) => n + c.join("").length, 0) || 1;
+      const span = sentence.end - sentence.start;
+      let at = sentence.start;
+      let enAt = 0;
+      chunks.forEach((chunk, i) => {
+        const len = chunk.join("").length;
+        const dur = (span * len) / total;
+        const last = i === chunks.length - 1;
+        const enTake = last ? enWords.length - enAt : Math.round((enWords.length * len) / total);
+        out.push({
+          start: at,
+          end: last ? sentence.end : at + dur,
+          th: chunk.join("").trim(),
+          en: enWords.slice(enAt, enAt + enTake).join(" "),
+        });
+        at += dur;
+        enAt += enTake;
+      });
+    }
+    // Hold each caption through a short pause rather than blanking the screen.
+    out.forEach((c, n) => {
+      const next = out[n + 1];
+      if (next && next.start - c.end <= VIEW_BRIDGE_GAP) c.end = next.start;
+    });
+    return out;
+  }
+
+  function viewCues() {
+    if (view.src !== state.cues || view.len !== state.cues.length) {
+      view.src = state.cues;
+      view.len = state.cues.length;
+      view.cues = buildViewCues(state.cues);
+      state.activeIndex = -1;
+    }
+    return view.cues;
+  }
+
   function findCueAt(time) {
-    const cues = state.cues;
+    const cues = viewCues();
     if (!cues.length) return -1;
 
     const current = cues[state.activeIndex];
@@ -1405,26 +2500,13 @@
       const index = findCueAt(state.video.currentTime);
       if (index !== state.activeIndex) {
         state.activeIndex = index;
-        renderCue(index >= 0 ? state.cues[index] : null);
+        renderCue(index >= 0 ? viewCues()[index] : null);
       }
     }
     tickDubbing();
   }
 
   function onVideoPause() {
-    // pause/play events are queued; a completed hold can already be playing
-    // again by the time its old pause event is delivered.
-    if (state.video && !state.video.paused) return;
-    if (state.dub.autoPaused) return;
-    if (!state.dub.playing) return;
-    state.dub.manualPausedAt = Date.now();
-    if (state.audio) state.audio.pause();
-    if (state.nativeSpeech) window.speechSynthesis.pause();
-  }
-
-  function onVideoEnded() {
-    // The proactive hold must happen before ended; an ended handler cannot
-    // prevent the host player from navigating to its next lecture.
     stopDubbing();
   }
 
@@ -1434,26 +2516,10 @@
   }
 
   function onVideoPlay() {
-    if (state.dub.autoResuming) {
-      state.dub.autoResuming = false;
-      onTimeUpdate();
-      return;
-    }
-    state.dub.autoPaused = false;
-    state.dub.waitingForAudio = false;
     state.activeIndex = -1;
-    // Resume the same audio element. Only an actual seek rewinds the cursor.
-    if (state.dub.manualPausedAt != null) {
-      state.dub.deadline += Date.now() - state.dub.manualPausedAt;
-      state.dub.manualPausedAt = null;
-      if (state.nativeSpeech) window.speechSynthesis.resume();
-      if (state.audio) {
-        const token = state.dub.token;
-        state.audio.play().catch(() => {
-          if (state.dub.token === token) stopDubbing();
-        });
-      }
-    }
+    // Resuming mid-sentence would replay it from the top; re-aim at wherever
+    // the playhead now is instead.
+    resyncDub();
     onTimeUpdate();
   }
 
@@ -1500,37 +2566,19 @@
 
   async function start() {
     // Anything still in flight from the previous lecture is now stale.
-    const generation = ++state.generation;
-    hideGate(false);
-    stopDubbing();
-    resetAudioCache();
-    if (state.video) {
-      state.video.removeEventListener("timeupdate", onTimeUpdate);
-      state.video.removeEventListener("pause", onVideoPause);
-      state.video.removeEventListener("seeking", onVideoSeeking);
-      state.video.removeEventListener("play", onVideoPlay);
-      state.video.removeEventListener("ended", onVideoEnded);
-      if (state.sourceVolume !== null) state.video.volume = state.sourceVolume;
-    }
-    if (state.overlay) state.overlay.remove();
-    state.overlay = state.line = state.video = null;
-    state.sourceVolume = null;
-    state.cues = [];
-    state.activeIndex = -1;
-    state.dub.segments = [];
-    removePanel();
-    if (study) study.reset();
-    syncNativeCaptions();
+    state.generation += 1;
+    hideGate();
     // Skipping the wait was a decision about that lecture, not about the course.
     gate.skipped = false;
     cleanupArticle();
     cleanupQuiz();
+    cleanupAssignment();
 
     const described = await site.describe();
-    assertCurrent(generation);
     if (!described) return; // not a page this site knows how to translate
 
     if (described.kind === "quiz") return startQuiz(described.payload);
+    if (described.kind === "assignment") return startAssignment(described.payload);
     if (described.kind === "article") return startArticle(described.payload);
     return startVideo(described.payload);
   }
@@ -1569,12 +2617,12 @@
     if (generation !== state.generation || !state.video) return;
 
     state.cues = partial;
-    refreshStudy();
-    updateDubSegments(partial);
+    state.dub.segments = buildDubSegments(partial);
     syncNativeCaptions();
 
     if (state.status === "ready") {
       // Already released — just keep the growing translation flowing in.
+      resyncDub();
       if (state.dubbingEnabled) prefetchAudio(state.dub.cursor);
       state.activeIndex = -1;
       onTimeUpdate();
@@ -1634,19 +2682,16 @@
     video.removeEventListener("pause", onVideoPause);
     video.removeEventListener("seeking", onVideoSeeking);
     video.removeEventListener("play", onVideoPlay);
-    video.removeEventListener("ended", onVideoEnded);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("pause", onVideoPause);
     video.addEventListener("seeking", onVideoSeeking);
     video.addEventListener("play", onVideoPlay);
-    video.addEventListener("ended", onVideoEnded);
 
     state.status = "loading";
     renderStatus("กำลังตรวจคำบรรยายของวิดีโอนี้ ...");
     showGate("กำลังตรวจคำบรรยายของวิดีโอนี้ ...", site.title());
 
     const built = await site.videoCues(payload);
-    assertCurrent(generation);
     if (!built.ok && built.code === "native-thai") {
       hideGate();
       state.hasNativeThai = true;
@@ -1678,7 +2723,6 @@
     }
 
     const force = await takeForceFlag(site.cacheId());
-    assertCurrent(generation);
 
     state.status = "translating";
     const headline = force
@@ -1720,15 +2764,14 @@
 
     const wasReady = state.status === "ready";
     state.cues = translated || [];
-    refreshStudy();
-    updateDubSegments(state.cues);
+    state.dub.segments = buildDubSegments(state.cues);
     state.status = "ready";
     state.activeIndex = -1;
     syncNativeCaptions();
     log("ช่วงพากย์เสียง", state.dub.segments.length, "ประโยค");
     // Buffer ahead of the playhead before releasing the video, so the first
     // sentences are ready instead of arriving one late request at a time.
-    if (!wasReady) resyncDub();
+    resyncDub();
     prefetchAudio(state.dub.cursor);
     hideGate();
     renderStatus(
@@ -1743,6 +2786,139 @@
   }
 
   // ---------------------------------------------------------------- quiz mode
+
+
+  // ---------------------------------------------------------- assignment mode
+
+  function assignmentId() {
+    return (location.pathname.match(/\/learn\/practice\/(\d+)/) || [])[1] || null;
+  }
+
+  function collectAssignmentBlocks(root) {
+    const blocks = [];
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    while ((node = walk.nextNode())) {
+      const text = node.nodeValue.replace(/\s+/g, " ").trim();
+      if (!text || text.length < 2) continue;
+      if (/^[\d\.]*$/.test(text)) continue;
+      
+      const el = node.parentElement;
+      if (!el) continue;
+      if (el.tagName === "CODE" || el.tagName === "PRE" || el.closest("pre")) continue;
+      if (el.classList.contains("udth-assignment-th")) continue;
+      if (el.closest('button') || el.closest('[class*="progress-bar"]') || el.closest('[class*="banner"]')) continue;
+      
+      blocks.push({ el, text });
+    }
+    // Deduplicate elements while remembering the text we found
+    const unique = [];
+    const seen = new Set();
+    for (const b of blocks) {
+      if (!seen.has(b.el)) {
+        seen.add(b.el);
+        unique.push(b);
+      }
+    }
+    return unique;
+  }
+
+  async function startAssignment(id) {
+    const generation = state.generation;
+    let container = null;
+    for (let i = 0; i < 40; i++) {
+      // The wrapper classes change depending on whether we are on the "Instructions" tab,
+      // the "Submission" tab, or the general overview. 
+      // Instead of hunting for the exact inner container, we look for the outermost 
+      // wrapper that holds the assignment content, then collect blocks from there.
+      container = 
+        document.querySelector('[data-purpose="curriculum-item-viewer-content"]') ||
+        document.querySelector('[class*="app--app-content"]') ||
+        document.body;
+      if (container) break;
+      await sleep(500);
+    }
+    if (!container) return;
+
+    const blocks = collectAssignmentBlocks(container);
+    if (!blocks.length) return;
+
+    state.status = "translating";
+    showGate(`กำลังแปลคำสั่ง Assignment ${blocks.length} บรรทัดเป็นไทย ...`);
+
+    const payload = {
+      course: courseSlug(),
+      lecture: `assignment-${id}`,
+      title: lessonTitle(),
+      cues: blocks.map((b, n) => { return { start: n, end: n + 1, text: b.text }; }),
+      mode: "doc",
+    };
+
+    let translated;
+    try {
+      translated = await requestTranslation(
+        { ...payload, force: await takeForceFlag(payload.lecture) },
+        generation,
+        (done, total) => {
+          const suffix = total ? ` (${done}/${total})` : "";
+          showGate(`กำลังแปลคำสั่ง Assignment ...${suffix}`);
+        }
+      );
+    } catch (err) {
+      if (err instanceof Stale) return;
+      state.status = "error";
+      showGate(describeTranslateError(err), "error");
+      return;
+    }
+
+    state.quizMap = new Map();
+    (translated || []).forEach((cue, n) => {
+      if (cue && cue.th && payload.cues[n]) {
+        state.quizMap.set(normalizeText(payload.cues[n].text), cue.th);
+      }
+    });
+
+    state.status = "ready";
+    hideGate();
+    watchAssignmentDom(container);
+  }
+
+  function injectAssignmentTranslations(container) {
+    if (!state.quizMap || !state.enabled) return;
+    collectAssignmentBlocks(container).forEach((b) => {
+      const el = b.el;
+      if (el.nextElementSibling && el.nextElementSibling.classList.contains("udth-assignment-th")) return;
+      const thai = state.quizMap.get(normalizeText(b.text));
+      if (!thai) return;
+      const line = document.createElement("div");
+      line.className = "udth-assignment-th";
+      line.textContent = thai;
+      line.style.fontSize = "0.95em";
+      line.style.marginTop = "2px";
+      line.style.color = "#c084fc";
+      line.style.opacity = "0.95";
+      line.style.lineHeight = "1.6";
+      // Ensure we stay block-level so we don't flow inline with the next phrase
+      line.style.display = "block";
+      if (el.nextSibling) el.parentNode.insertBefore(line, el.nextSibling);
+      else el.parentNode.appendChild(line);
+    });
+  }
+
+  function watchAssignmentDom(container) {
+    injectAssignmentTranslations(container);
+    if (state.assignmentObserver) state.assignmentObserver.disconnect();
+    state.assignmentObserver = new MutationObserver(() => injectAssignmentTranslations(container));
+    state.assignmentObserver.observe(container, { childList: true, subtree: true });
+  }
+
+  function cleanupAssignment() {
+    if (state.assignmentObserver) {
+      state.assignmentObserver.disconnect();
+      state.assignmentObserver = null;
+    }
+    document.querySelectorAll(".udth-assignment-th").forEach((el) => el.remove());
+  }
 
   function quizId() {
     return (location.pathname.match(/\/learn\/quiz\/(\d+)/) || [])[1] || null;
@@ -1811,7 +2987,6 @@
     state.status = "translating";
 
     const force = await takeForceFlag(id);
-    assertCurrent(generation);
 
     let translated;
     try {
@@ -1978,7 +3153,6 @@
     setDocStatus(panel, `กำลังแปลเอกสาร ${blocks.length} ย่อหน้าเป็นไทย ...`);
 
     const force = await takeForceFlag(lectureId());
-    assertCurrent(generation);
 
     let translations;
     try {
@@ -2374,7 +3548,7 @@
         if (state.status === "ready" && (!state.overlay || !state.overlay.isConnected)) {
           state.overlay = null;
           ensureOverlay(state.video);
-          renderCue(state.activeIndex >= 0 ? state.cues[state.activeIndex] : null);
+          renderCue(state.activeIndex >= 0 ? viewCues()[state.activeIndex] : null);
         }
         if (!panel.el || !panel.el.isConnected || !panel.button || !panel.button.isConnected) {
           renderPanel();
@@ -2385,7 +3559,7 @@
       }
 
       const key = site.pageKey() || location.pathname;
-      if (key === state.lectureKey) return;
+      if (key === state.lectureKey || running) return;
 
       if (key !== attemptedKey) {
         attemptedKey = key;
@@ -2440,7 +3614,7 @@
         dubbingVolume: state.dubbingVolume,
         originalAudioVolume: state.originalAudioVolume,
         dubRateCap: state.dubRateCap,
-        ttsVoice: currentVoice(),
+        ttsVoice: state.ttsVoice || DEFAULT_TTS_VOICE,
         ttsEngine: state.ttsEngine,
         nativeVoices: state.nativeVoices,
         audioCached: state.audioUrls.size,
@@ -2496,10 +3670,11 @@
   });
 
   chrome.storage.local
-    .get(["enabled", "dualMode", "dubbingEnabled", "ttsEngine", "dubbingVolume", "originalAudioVolume", "ttsVoice", "dubRateCap"])
+    .get(["enabled", "dualMode", "capSize", "dubbingEnabled", "ttsEngine", "dubbingVolume", "originalAudioVolume", "ttsVoice", "dubRateCap"])
     .then((stored) => {
       if (typeof stored.enabled === "boolean") state.enabled = stored.enabled;
       if (typeof stored.dualMode === "boolean") state.dualMode = stored.dualMode;
+      if (["s", "m", "l"].includes(stored.capSize)) state.capSize = stored.capSize;
       if (typeof stored.dubbingEnabled === "boolean") state.dubbingEnabled = stored.dubbingEnabled;
       if (typeof stored.ttsEngine === "string" && stored.ttsEngine) {
         state.ttsEngine = stored.ttsEngine;

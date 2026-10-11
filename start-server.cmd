@@ -16,7 +16,11 @@ set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
 title Udemy TH - subtitle server
 
-python -m udemy_th serve
+if exist "%~dp0.venv\Scripts\python.exe" (
+    "%~dp0.venv\Scripts\python.exe" -m udemy_th serve
+) else (
+    python -m udemy_th serve
+)
 
 echo.
 pause
