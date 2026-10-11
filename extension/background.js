@@ -125,6 +125,44 @@ async function synthesizeSpeech(payload) {
   };
 }
 
+// The one request handler the page uses (core/api.js). It forwards a single
+// short request and returns {ok, status, data} or {ok:false, error}; the page
+// owns what requests mean and any waiting. `audio: true` reads the response as
+// bytes (base64) for the reason given above synthesizeSpeech.
+async function apiRequest({ method = "GET", path, body = null, timeoutMs = 25000, audio = false }) {
+  if (typeof path !== "string" || !path.startsWith("/")) {
+    return { ok: false, status: 0, error: "invalid path" };
+  }
+  const base = await serverUrl();
+  let response;
+  try {
+    response = await localFetch(
+      `${base}${path}`,
+      {
+        method,
+        cache: "no-store",
+        headers: body === null ? undefined : { "Content-Type": "application/json" },
+        body: body === null ? undefined : JSON.stringify(body),
+      },
+      timeoutMs
+    );
+  } catch (error) {
+    // No answer at all: the server is not running (or not reachable).
+    return { ok: false, unreachable: true, error: String((error && error.message) || error) };
+  }
+  if (audio) {
+    if (!response.ok) return { ok: false, status: response.status, error: `อ่านไฟล์เสียงไม่ได้ (HTTP ${response.status})` };
+    return {
+      ok: true,
+      status: response.status,
+      data: { type: response.headers.get("Content-Type") || "audio/mpeg", base64: toBase64(await response.arrayBuffer()) },
+    };
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return { ok: false, status: response.status, error: data.error || `เซิร์ฟเวอร์ตอบ ${response.status}` };
+  return { ok: true, status: response.status, data };
+}
+
 // Ask the server to load a local voice model now, and report how far it got.
 // Safe to repeat: while loading, or once loaded, it only answers the state.
 async function warmupVoice(engine) {
@@ -190,6 +228,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     youtubeCaptionTracks(tabId)
       .then((tracks) => sendResponse({ ok: true, tracks }))
       .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
+  if (message.type === "api") {
+    apiRequest(message).then(sendResponse, (error) =>
+      sendResponse({ ok: false, status: 0, error: String((error && error.message) || error) })
+    );
     return true;
   }
 
