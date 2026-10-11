@@ -1,8 +1,8 @@
-// Site adapters. Loaded before content.js and sharing its isolated world.
+// Site adapters. Loaded first; every other content script shares this world.
 //
 // Everything that differs between the sites we support lives behind one small
-// interface, so the engine in content.js — overlay, dubbing, gating, the
-// translation round trip — never has to know which site it is running on:
+// interface, so the rest (main.js, the session, the UI) never has to know
+// which site it is running on:
 //
 //   name              "udemy" | "youtube"
 //   pageKey()         identity of the page on screen, or null if not translatable
@@ -11,11 +11,12 @@
 //   title()           human-readable name of what is playing
 //   playerContainer() element to anchor the overlay to (null -> video's parent)
 //   describe()        what kind of page this is, plus whatever videoCues needs
-//   videoCues(p)      the English cue list, or a reason there isn't one
+//   videoCues(p)      the original-language cues and their language, or a
+//                     reason there are none ({ok:false, code})
 //   supportsSection   whether "translate the whole section" applies here
 //
-// The Udemy adapter is assembled in content.js, where the functions it wraps
-// already live. This file holds the shared helpers and the YouTube adapter.
+// The Udemy adapter is sites/udemy.js. This file holds the shared helpers and
+// the YouTube adapter.
 
 var UDTH = window.UDTH || (window.UDTH = {});
 
@@ -388,6 +389,8 @@ function pickSourceTrack(tracks) {
 
 UDTH.youtube = {
   name: "youtube",
+  // Exposed for tests/sites.test.cjs; not part of the site interface.
+  __pickSourceTrack: pickSourceTrack,
   supportsSection: false,
 
   pageKey: youtubeVideoId,

@@ -37,6 +37,17 @@
    * @param {(message: object) => Promise<object>} send  e.g. chrome.runtime.sendMessage
    * @param {{sleep?: (ms: number) => Promise<void>}} [options]
    */
+  function normalizeEngines(list) {
+    return (list || []).map((e) => ({
+      name: e.name,
+      label: e.label,
+      ready: Boolean(e.ready),
+      error: e.error || "",
+      translates: Boolean(e.translates),
+      voices: e.voices || [],
+    }));
+  }
+
   function createApi(send, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
     async function call(method, path, body = null, { timeoutMs = 25000, audio = false } = {}) {
       let reply;
@@ -54,17 +65,14 @@
     }
 
     return {
-      /** The server's speech engines and what each can do. */
-      async engines() {
+      /** Server version and its speech engines (what each can do). */
+      async health() {
         const health = await call("GET", "/health", null, { timeoutMs: 3000 });
-        return (health.voices || []).map((e) => ({
-          name: e.name,
-          label: e.label,
-          ready: Boolean(e.ready),
-          error: e.error || "",
-          translates: Boolean(e.translates),
-          voices: e.voices || [],
-        }));
+        return { version: health.version || "", engines: normalizeEngines(health.voices) };
+      },
+
+      async engines() {
+        return (await this.health()).engines;
       },
 
       /** Start loading an engine's model; repeat to read its state. */
@@ -108,6 +116,12 @@
           if (onProgress) onProgress(info.progress || 0, info.chunks || 0);
         }
         throw new ApiError("แปลนานเกินไป ยกเลิกแล้ว", "server");
+      },
+
+      /** Queue a lecture for later (section pre-translation); does not wait. */
+      async enqueue(payload) {
+        const job = await call("POST", "/translate", { ...payload, batch: true });
+        return { cached: Boolean(job.cached), status: job.status };
       },
 
       queue() {

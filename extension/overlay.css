@@ -140,6 +140,25 @@ html.udth-hide-native .ytp-caption-window-container {
   line-height: 1.45;
 }
 
+/* A draft: Seamless's fast translation, shown until the AI's arrives.
+   Dimmer and tagged, so it is never mistaken for the checked text. */
+.udth-th.udth-draft { color: rgba(255, 255, 255, 0.78); }
+
+.udth-draft-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--udth-accent-soft);
+  color: var(--udth-accent-hi);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: 0.2em;
+  text-shadow: none;
+}
+
 /* Short-lived status line ("พร้อมแล้ว — ซับไทย 214 บรรทัด"). */
 .udth-status {
   display: inline-flex;
@@ -252,7 +271,9 @@ html.udth-hide-native .ytp-caption-window-container {
 
 /* ------------------------------------------------------------- player menu */
 
-.udth-menu[hidden] { display: none; }
+.udth-menu[hidden],
+.udth-menu [hidden],
+.udth-gate [hidden] { display: none !important; }
 
 .udth-menu {
   box-sizing: border-box;
@@ -507,6 +528,13 @@ html.udth-hide-native .ytp-caption-window-container {
 .udth-dubrow-on .udth-switch { background: var(--udth-accent); }
 .udth-dubrow-on .udth-switch::after { transform: translateX(14px); background: var(--udth-on-accent); }
 
+/* Instant / accurate: when the video may start. Only shown for a voice that
+   can translate (Seamless). */
+.udth-dub-group { gap: 8px; padding: 0; background: transparent; }
+.udth-start { display: flex; flex-direction: column; gap: 6px; padding: 2px 2px 0; }
+.udth-start .udth-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.udth-start-hint { margin: 0; color: var(--udth-text-3); font-size: 12px; line-height: 1.5; }
+
 /* Advanced voice settings, collapsed by default. */
 .udth-adv { border-radius: var(--udth-r-lg); background: var(--udth-raise-1); }
 
@@ -745,6 +773,57 @@ html.udth-hide-native .ytp-caption-window-container {
   from { transform: translateX(-100%); }
   to { transform: translateX(250%); }
 }
+
+/* What is still being waited on, one line each. */
+.udth-gate-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--udth-r-md);
+  background: var(--udth-raise-1);
+  list-style: none;
+  color: var(--udth-text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.udth-gate-steps li::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--udth-accent);
+  vertical-align: 0.15em;
+}
+
+/* Known progress replaces the indeterminate stripe. */
+.udth-gate-bar {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--udth-raise-2);
+}
+
+.udth-gate-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--udth-accent);
+  transition: width 300ms var(--udth-ease);
+}
+
+.udth-gate-card:has(.udth-gate-bar:not([hidden]))::after,
+.udth-gate-card.udth-gate-error::after { display: none; }
+
+.udth-gate-card.udth-gate-error .udth-gate-title { color: var(--udth-err-text); }
+.udth-gate-card.udth-gate-error .udth-gate-spinner::before { animation: none; border-color: var(--udth-err); }
 
 .udth-gate-skip {
   margin-top: 8px;

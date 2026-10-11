@@ -65,3 +65,13 @@ test('stopping pauses the clip and settles the line', async () => {
   await handle.done;
   assert.equal(clip.element.paused, 1);
 });
+
+test('automatic voice stays inside the selected engine', () => {
+  const {resolveVoiceId} = require('../extension/pipeline/voices.js');
+  const seamless = {voices: [{id: 'seamless:th'}]};
+  const omni = {voices: [{id: 'omnivoice:male'}, {id: 'omnivoice:female'}]};
+  assert.equal(resolveVoiceId({voice: ''}, seamless), 'seamless:th');
+  assert.equal(resolveVoiceId({voice: 'th-TH-NiwatNeural'}, seamless), 'seamless:th', 'a voice saved from Edge is ignored');
+  assert.equal(resolveVoiceId({voice: 'omnivoice:female'}, omni), 'omnivoice:female');
+  assert.equal(resolveVoiceId({voice: ''}, undefined), 'th-TH-NiwatNeural', 'server down: a safe default');
+});

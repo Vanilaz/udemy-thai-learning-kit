@@ -114,3 +114,11 @@ test('the engine catalogue includes what each engine can do', async () => {
   const engines = await createApi(send).engines();
   assert.deepEqual(engines, [{name: 'seamless', label: 'Seamless', ready: true, error: '', translates: true, voices: [{id: 'seamless:th', label: 'ไทย'}]}]);
 });
+
+test('queueing a lecture for later sends it as a batch job and does not wait', async () => {
+  let posted;
+  const {send, calls} = transport({'POST /translate': (msg) => { posted = msg.body; return {ok: true, data: {job: 'j', status: 'queued'}}; }});
+  assert.deepEqual(await createApi(send).enqueue({lecture: '7', cues: []}), {cached: false, status: 'queued'});
+  assert.equal(posted.batch, true);
+  assert.deepEqual(calls, ['POST /translate']);
+});

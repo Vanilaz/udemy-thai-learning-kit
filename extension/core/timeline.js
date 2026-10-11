@@ -129,17 +129,23 @@
       const total = pieces.reduce((n, p) => n + p.length, 0) || 1;
       const end = shownUntil(sentence);
       const span = end - sentence.start;
+      // The original under each chunk is its proportional share of the
+      // sentence's words, so the two lines stay roughly in step.
+      const sourceWords = sentence.source.split(/\s+/).filter(Boolean);
       let at = sentence.start;
+      let wordAt = 0;
       const chunks = pieces.map((piece, i) => {
         const last = i === pieces.length - 1;
+        const take = last ? sourceWords.length - wordAt : Math.round((sourceWords.length * piece.length) / total);
         const chunk = {
           text: piece,
-          source: sentence.source,
+          source: pieces.length === 1 ? sentence.source : sourceWords.slice(wordAt, wordAt + take).join(" "),
           quality,
           start: at,
           end: last ? end : at + (span * piece.length) / total,
         };
         at = chunk.end;
+        wordAt += take;
         return chunk;
       });
       chunkCache.set(sentence.id, { version: sentence.version, chunks });

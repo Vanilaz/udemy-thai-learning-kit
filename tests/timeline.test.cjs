@@ -56,8 +56,9 @@ test('with nothing translated the caption is the original, once', () => {
 test('a caption is held through a short pause so it does not flicker', () => {
   const t = createTimeline(source, {lang: 'EN'});
   // 4.2 to 4.4 is a breath between sentences: the first one stays up.
-  assert.equal(t.captionAt(4.3).source, 'So the function takes a name and returns a greeting string.');
-  assert.equal(t.captionAt(4.3).end, 4.4);
+  const held = t.captionAt(4.3);
+  assert.match(held.source, /a greeting string\.$/, 'the end of the first sentence');
+  assert.equal(held.end, 4.4);
 });
 
 test('a long sentence is shown in readable chunks cut on word boundaries', () => {
@@ -97,4 +98,13 @@ test('the next sentence to speak is the first one not over yet', () => {
 test('each sentence may run until the next one starts', () => {
   const t = createTimeline(source, {lang: 'EN'});
   assert.deepEqual(t.sentences.map(s => s.budgetEnd), [4.4, 12, 17]);
+});
+
+test('under a long sentence, each chunk shows its share of the original', () => {
+  const english = 'one two three four five six seven eight nine ten.';
+  const t = createTimeline([{start: 0, end: 10, text: english}], {lang: 'EN'});
+  t.applyTranslation([{th: 'ก'.repeat(60) + ' ' + 'ข'.repeat(60)}]);
+  const first = t.captionAt(0.1), last = t.captionAt(9.9);
+  assert.notEqual(first.source, last.source);
+  assert.equal(`${first.source} ${last.source}`, english, 'every word once, in order');
 });

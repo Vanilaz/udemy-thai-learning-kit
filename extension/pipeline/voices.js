@@ -121,6 +121,18 @@
     return synth.getVoices().filter((v) => /^th(?:-|_)/i.test(v.lang)).map((v) => v.name);
   }
 
-  UDTH.voices = { createServerVoice, createBrowserVoice, browserVoiceNames };
+  /**
+   * The voice id to synthesize with. "" means the engine's first voice. A
+   * saved id from another engine is ignored: the server routes requests by
+   * voice id, so it would quietly speak through that other engine (this sent
+   * every "automatic" Seamless line to Edge).
+   */
+  function resolveVoiceId(dub, engine, fallback = "th-TH-NiwatNeural") {
+    const voices = (engine && engine.voices) || [];
+    if (voices.some((v) => v.id === dub.voice)) return dub.voice;
+    return (voices[0] && voices[0].id) || fallback;
+  }
+
+  UDTH.voices = { createServerVoice, createBrowserVoice, browserVoiceNames, resolveVoiceId };
   if (typeof module !== "undefined") module.exports = UDTH.voices;
 })();
