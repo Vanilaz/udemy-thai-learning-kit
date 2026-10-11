@@ -15,6 +15,9 @@
   UDTH.__mainStarted = true;
 
   const log = (...args) => console.log("[udth]", ...args);
+  // One line per running copy: two of these on one page load means the
+  // content scripts were injected twice (seen once, not yet explained).
+  log(`ส่วนขยายเริ่มทำงาน v${chrome.runtime.getManifest().version}`, Math.random().toString(36).slice(2, 7));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const site = UDTH.isYouTube ? UDTH.youtube : UDTH.udemy;

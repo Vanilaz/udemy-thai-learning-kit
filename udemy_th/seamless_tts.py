@@ -55,6 +55,12 @@ LANG_CODES = {
 TRADITIONAL_CHINESE = {"zh-hant", "zh-tw", "zh-hk", "zh-mo"}
 
 
+def tidy_thai(text: str) -> str:
+    """Seamless writes sara am as NIKHAHIT + SARA AA ("กํา"), which renders
+    visibly wrong in most fonts; Unicode normalisation does not merge them."""
+    return (text or "").replace("ํา", "ำ").strip()
+
+
 def seamless_lang(code: str | None) -> str:
     """'en', 'en_US', 'pt-BR', 'zh-Hant', 'eng' -> Seamless code ('tha' if none).
 
@@ -174,7 +180,7 @@ class SeamlessTts:
                 return None
             result = {"file": out_path.name, "cached": True}
             if src != "tha" and text_path.is_file():
-                result["text"] = text_path.read_text(encoding="utf-8")
+                result["text"] = tidy_thai(text_path.read_text(encoding="utf-8"))
             return result
 
         hit = cached()
@@ -201,7 +207,7 @@ class SeamlessTts:
                 audio_np = output.waveform[0].cpu().squeeze().to(torch.float32).numpy()
                 spoken = ""
                 if src != "tha" and output.sequences is not None:
-                    spoken = self._processor.decode(output.sequences[0].tolist(), skip_special_tokens=True).strip()
+                    spoken = tidy_thai(self._processor.decode(output.sequences[0].tolist(), skip_special_tokens=True))
 
                 wav_io = io.BytesIO()
                 sf.write(wav_io, audio_np, samplerate=SAMPLE_RATE, format="WAV")

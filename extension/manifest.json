@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ฮองเรียน — HongRian",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "ซับไทยและเสียงพากย์ไทยด้วย AI บนวิดีโอ Udemy และ YouTube",
   "permissions": [
     "storage",

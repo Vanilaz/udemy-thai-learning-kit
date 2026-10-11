@@ -76,6 +76,11 @@ class SeamlessLanguageTests(unittest.TestCase):
         self.assertNotEqual(seamless_tts.SeamlessTts.cache_key("hello", "eng"), seamless_tts.SeamlessTts.cache_key("hello", "spa"))
 
 
+class ThaiTextTests(unittest.TestCase):
+    def test_split_sara_am_from_seamless_is_joined(self):
+        self.assertEqual(seamless_tts.tidy_thai("กําหนด สําหรับ"), "กำหนด สำหรับ")
+
+
 class RoutingTests(unittest.TestCase):
     def test_original_text_is_refused_by_engines_that_cannot_translate(self):
         from udemy_th.google_tts import TtsError

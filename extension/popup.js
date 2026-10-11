@@ -127,7 +127,7 @@ async function refreshLecture() {
     return;
   }
   if (!state || !engines.length) return;
-  const lang = state.sourceLang ? `${state.sourceLang} → ไทย` : "";
+  const lang = state.sourceLang ? `${state.sourceLang.split("-")[0]} → ไทย` : "";
   if (state.phase === "playing") {
     setStatus(state.translating ? `กำลังเล่น ${lang} · ส่วนที่เหลือกำลังแปล` : `กำลังเล่น ${lang} · แปลครบแล้ว`, true);
   } else if (state.phase === "waiting") {

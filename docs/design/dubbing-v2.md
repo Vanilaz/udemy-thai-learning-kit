@@ -1,6 +1,10 @@
 # ออกแบบระบบใหม่: ซับไทย + พากย์ไทย v2
 
-สถานะ: **ร่างรอการอนุมัติ** · 2026-10-11
+สถานะ: **ทำแล้วในเวอร์ชัน 1.0.0** · 2026-10-11 (ดู CHANGELOG.md)
+
+> โครงไฟล์จริงต่างจากข้อ 4 เล็กน้อย: speech + player รวมเป็น `pipeline/dubber.js` + `pipeline/voices.js`,
+> text pipeline อยู่ใน `pipeline/session.js` และ API ของเซิร์ฟเวอร์ยังใช้ path เดิม (เพิ่ม `/tts/warmup`, `version`, `translates`)
+> เพราะ seam ที่มีสอง adapter จริงมีแค่ site และ voice ตามหลัก deep module
 
 ## 1. ทำไมต้องออกแบบใหม่
 

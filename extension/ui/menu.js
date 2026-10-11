@@ -330,7 +330,8 @@
       el.hidden = !open;
       if (!open) return;
 
-      $("src").textContent = sourceLang() || "EN";
+      // "EN-US" -> "EN": the language matters to the viewer, not the region.
+      $("src").textContent = (sourceLang() || "EN").split("-")[0];
       const engineOptions = catalogue().map((e) => ({
         value: e.name,
         label: e.ready ? e.label : `${e.label} (ยังไม่พร้อม)`,
