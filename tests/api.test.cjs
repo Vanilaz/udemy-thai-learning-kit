@@ -122,3 +122,19 @@ test('queueing a lecture for later sends it as a batch job and does not wait', a
   assert.equal(posted.batch, true);
   assert.deepEqual(calls, ['POST /translate']);
 });
+
+test('a running job hands over its id, and focus points it at the viewer', async () => {
+  let job = null;
+  let posted = null;
+  const {send, calls} = transport({
+    'POST /translate': {ok: true, data: {job: 'abc', status: 'queued'}},
+    'GET /job/abc': {ok: true, data: {status: 'done', cues: []}},
+    'POST /job/abc/focus': (msg) => { posted = msg.body; return {ok: true, data: {ok: true}}; },
+  });
+  const api = createApi(send, {sleep: noWait});
+  await api.translate({cues: []}, {onJob: (id) => (job = id)});
+  assert.equal(job, 'abc');
+  await api.focus('abc', 412.5);
+  assert.deepEqual(posted, {time: 412.5});
+  assert.equal(calls.at(-1), 'POST /job/abc/focus');
+});

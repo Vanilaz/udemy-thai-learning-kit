@@ -93,13 +93,14 @@
       },
 
       /** Translate a lecture: resolves with one row per cue ({start,end,en,th}). */
-      async translate(payload, { onPartial, onProgress, isCurrent = () => true } = {}) {
+      async translate(payload, { onPartial, onProgress, onJob, isCurrent = () => true } = {}) {
         const check = () => {
           if (!isCurrent()) throw new Stale();
         };
         const job = await call("POST", "/translate", payload);
         check();
         if (job.status === "done" && job.cues) return job.cues;
+        if (onJob) onJob(job.job);
 
         const deadline = Date.now() + POLL_TIMEOUT_MS;
         while (Date.now() < deadline) {
@@ -116,6 +117,14 @@
           if (onProgress) onProgress(info.progress || 0, info.chunks || 0);
         }
         throw new ApiError("แปลนานเกินไป ยกเลิกแล้ว", "server");
+      },
+
+      /**
+       * Tell a running job where the viewer is, so the chunks around that
+       * point are translated next (a far seek should not wait for the rest).
+       */
+      focus(jobId, time) {
+        return call("POST", `/job/${jobId}/focus`, { time: Math.max(0, Number(time) || 0) }, { timeoutMs: 3000 });
       },
 
       /** Queue a lecture for later (section pre-translation); does not wait. */

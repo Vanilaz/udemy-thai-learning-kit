@@ -60,6 +60,25 @@ _job_args: dict[str, tuple] = {}
 _queue: list[str] = []
 # Guards all three of the above, and wakes the worker when work arrives.
 _cv = threading.Condition()
+
+# Where the viewer of each running job is watching (seconds). The translator
+# reads it before starting each chunk, so seeking far ahead gets that part
+# translated next. Kept apart from _jobs: it changes often and is never saved.
+_focus: dict[str, float] = {}
+_focus_lock = threading.Lock()
+
+
+def _set_focus(key: str, seconds: float) -> None:
+    with _focus_lock:
+        _focus[key] = seconds
+
+
+def _focus_of(key: str):
+    def read() -> float | None:
+        with _focus_lock:
+            return _focus.get(key)
+
+    return read
 _store_path: Path | None = None
 MAX_PENDING_JOBS = 200
 MAX_HISTORY_JOBS = 200
@@ -309,7 +328,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         action = re.fullmatch(r"/job/([a-f0-9]{20})/(cancel|retry)", path)
-        if path not in ("/translate", "/tts", "/tts/warmup") and not action:
+        focus = re.fullmatch(r"/job/([a-f0-9]{20})/focus", path)
+        if path not in ("/translate", "/tts", "/tts/warmup") and not action and not focus:
             self._refuse(404, "not found")
             return
 
@@ -332,6 +352,15 @@ class _Handler(BaseHTTPRequestHandler):
 
         if not isinstance(payload, dict):
             self._send(400, {"error": "JSON ต้องเป็น object"})
+            return
+
+        if focus:
+            seconds = _as_float(payload.get("time"))
+            if seconds is None or not math.isfinite(seconds) or seconds < 0:
+                self._send(400, {"error": "time ต้องเป็นตัวเลขวินาที"})
+                return
+            _set_focus(focus.group(1), seconds)
+            self._send(200, {"ok": True})
             return
 
         if action:
@@ -751,6 +780,7 @@ def _translate(
         on_progress=on_progress,
         mode=mode,
         on_chunk=on_chunk,
+        focus=_focus_of(key),
     )
 
 

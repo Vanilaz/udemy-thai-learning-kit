@@ -19,6 +19,22 @@
   // content scripts were injected twice (seen once, not yet explained).
   log(`ส่วนขยายเริ่มทำงาน v${chrome.runtime.getManifest().version}`, Math.random().toString(36).slice(2, 7));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Diagnostic trace, off by default. Turn on from the page's console with
+  // localStorage.setItem("udth-debug", "1") (content scripts share the page's storage).
+  // The last 40 entries are also kept on <html data-udth-trace>, readable from
+  // the page itself, for when the console is not at hand.
+  const trace = [];
+  const debug = (...args) => {
+    try {
+      if (!localStorage.getItem("udth-debug")) return;
+      console.log("[udth:debug]", ...args);
+      trace.push(`${new Date().toLocaleTimeString()} ${args.join(" ")}`);
+      if (trace.length > 40) trace.shift();
+      document.documentElement.dataset.udthTrace = JSON.stringify(trace);
+    } catch {
+      /* storage blocked: stay quiet */
+    }
+  };
 
   const site = UDTH.isYouTube ? UDTH.youtube : UDTH.udemy;
   const store = UDTH.settings.createSettingsStore({ area: chrome.storage.local, onChanged: chrome.storage.onChanged });
@@ -178,8 +194,12 @@
       const engine = engines.find((e) => e.name === waitingFor.voice.engine);
       steps.push(`โหลดเสียงพากย์ ${engine ? engine.label : waitingFor.voice.engine} ขึ้นการ์ดจอ`);
     }
-    const title = t && waitingFor.voice ? "กำลังเตรียมซับและเสียงพากย์ ..." : t ? "กำลังแปลเป็นไทย ..." : "กำลังโหลดเสียงพากย์ ...";
-    const detail = t
+    const title = t && t.seeked
+      ? "กำลังแปลช่วงที่คุณกรอไป ..."
+      : t && waitingFor.voice ? "กำลังเตรียมซับและเสียงพากย์ ..." : t ? "กำลังแปลเป็นไทย ..." : "กำลังโหลดเสียงพากย์ ...";
+    const detail = t && t.seeked
+      ? "AI กำลังแปลช่วงนี้ก่อนส่วนอื่น วิดีโอจะเล่นต่อเองเมื่อพร้อม หรือกดดูต่อโดยไม่รอได้"
+      : t
       ? "วิดีโอจะเล่นต่อเองเมื่อแปลล่วงหน้าพอ ที่เหลือแปลต่อเบื้องหลัง"
       : "ครั้งแรกหลังเปิดเซิร์ฟเวอร์ใช้เวลาราว 15-60 วินาที วิดีโอจะเล่นต่อเองเมื่อพร้อม";
     return { title, steps, detail, progress };
@@ -278,6 +298,7 @@
       onState: onSessionState,
       takeForce: () => takeForceFlag(site.cacheId()),
       log,
+      debug,
     });
     await page.session.start();
   }

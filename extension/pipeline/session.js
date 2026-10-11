@@ -35,6 +35,7 @@
     pollMs = 1500,
     sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
     log = () => {},
+    debug = () => {},
   }) {
     let disposed = false;
     let phase = "loading";
@@ -49,6 +50,8 @@
     let voiceLoading = false;
     let voiceToken = 0;
     let unsubscribe = () => {};
+    let jobId = null;
+    let seekHeld = false; // waiting again because the viewer jumped past the translation
     const hold = { active: false, wasPlaying: false, onPlay: null };
 
     const dub = () => settings.get().dub;
@@ -104,12 +107,14 @@
           readySeconds: Math.round(covered),
           neededSeconds: READY_AHEAD_SECONDS,
           ...(translating || { done: 0, total: 0 }),
+          ...(seekHeld ? { seeked: true } : {}),
         };
       }
       if (dub().on && voiceLoading) reasons.voice = { engine: dub().engine };
       if (skipped || !Object.keys(reasons).length) {
         phase = "playing";
         waitingFor = {};
+        seekHeld = false;
         releaseVideo();
         publish();
         if (dubber) dubber.refresh();
@@ -163,6 +168,22 @@
       return first;
     }
 
+    // A seek while the AI is still working: point the server at the new spot,
+    // and in accurate mode hold again if that stretch is not translated yet.
+    // Skipping the wait once means the user prefers not to be held in this
+    // lecture, so a seek never re-holds after that.
+    function onSeeked() {
+      if (disposed || !timeline || !translating) return;
+      const now = video.currentTime || 0;
+      if (jobId) api.focus(jobId, now).catch(() => {});
+      if (phase !== "playing" || skipped || instant()) return;
+      if (timeline.finalCoverage(now) >= READY_AHEAD_SECONDS || timeline.translatedToEnd(now)) return;
+      debug(`กรอไป ${Math.round(now)}s ยังไม่แปล รอแปลช่วงนี้ก่อน`);
+      phase = "waiting";
+      seekHeld = true;
+      evaluate();
+    }
+
     function buildDubber() {
       if (dubber) dubber.dispose();
       voice = makeVoice(dub(), engines);
@@ -175,7 +196,7 @@
           notice = `พากย์เสียงไม่ได้: ${String((error && error.message) || error).slice(0, 100)}`;
           publish();
         },
-        log,
+        debug,
       });
     }
 
@@ -187,6 +208,11 @@
           { course: site.cacheScope(), lecture: site.cacheId(), title: site.title(), cues: sourceCues, force },
           {
             isCurrent: () => !disposed,
+            onJob: (id) => {
+              jobId = id;
+              // Opened mid-lecture (a resume link, ?start=): translate from here.
+              if (!disposed && video.currentTime > 1) api.focus(id, video.currentTime).catch(() => {});
+            },
             onPartial: (partial) => {
               if (disposed) return;
               timeline.applyTranslation(partial);
@@ -202,6 +228,7 @@
         if (disposed) return;
         timeline.applyTranslation(rows);
         translating = null;
+        jobId = null;
         changed();
       } catch (error) {
         if (disposed) return;
@@ -258,6 +285,7 @@
           previous = next;
           onSettings(next, before);
         });
+        video.addEventListener("seeked", onSeeked);
         translate(transcript.cues);
         await watchVoice();
         // The translation may already have failed (or finished) meanwhile.
@@ -285,6 +313,7 @@
         disposed = true;
         voiceToken += 1;
         unsubscribe();
+        video.removeEventListener("seeked", onSeeked);
         if (dubber) dubber.dispose();
         releaseVideo(false);
       },

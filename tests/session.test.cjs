@@ -13,6 +13,7 @@ function fakeVideo() {
     removeEventListener: (t, fn) => (listeners[t] = (listeners[t] || []).filter(f => f !== fn)),
     pause() { this.paused = true; this.pauses += 1; },
     play() { this.paused = false; this.plays += 1; (listeners.play || []).forEach(fn => fn()); return Promise.resolve(); },
+    seek(time) { this.currentTime = time; (listeners.seeked || []).forEach(fn => fn()); },
   };
 }
 
@@ -23,16 +24,19 @@ const rows = (n) => cues.map((c, i) => ({...c, en: c.text, th: i < n ? `ปร�
 // A translation the test releases chunk by chunk.
 function controllableApi({engines = [], warmup = () => ({state: 'none'})} = {}) {
   let push, finish, fail;
+  const focused = [];
   const api = {
+    focus: async (job, time) => { focused.push([job, time]); return {ok: true}; },
     engines: async () => engines,
     warmup: async (name) => warmup(name),
-    translate: (payload, {onPartial, isCurrent}) => new Promise((resolve, reject) => {
+    translate: (payload, {onPartial, onJob, isCurrent}) => new Promise((resolve, reject) => {
+      if (onJob) onJob('job1');
       push = (r) => onPartial(r);
       finish = (r) => (isCurrent() ? resolve(r) : reject(Object.assign(new Error('stale'), {stale: true})));
       fail = reject;
     }),
   };
-  return {api, push: r => push(r), finish: r => finish(r), fail: e => fail(e)};
+  return {api, focused, push: r => push(r), finish: r => finish(r), fail: e => fail(e)};
 }
 
 const silentVoice = () => ({canTranslate: false, prepare: async () => ({}), speak: () => ({done: new Promise(() => {}), stop() {}})});
@@ -172,4 +176,77 @@ test('a disposed session ignores late results', async () => {
   session.dispose();
   t.push(rows(20)); await flush();
   assert.equal(states.length, count);
+});
+
+// ---------------------------------------------------------------- seeking
+
+async function playingAccurate() {
+  const t = controllableApi();
+  const ctx = setup({api: t.api});
+  ctx.session.start();
+  await flush();
+  t.push(rows(10)); await flush(); // 0-98s translated, the lecture plays
+  assert.equal(ctx.last().phase, 'playing');
+  return {t, ...ctx};
+}
+
+test('accurate: a seek past the translation holds again and asks for that stretch first', async () => {
+  const {t, video, last} = await playingAccurate();
+  video.seek(150);
+  await flush();
+  assert.deepEqual(t.focused, [['job1', 150]], 'the server is told where the viewer went');
+  assert.equal(last().phase, 'waiting');
+  assert.equal(last().waitingFor.translation.seeked, true, 'the gate can say why');
+  assert.ok(video.paused, 'no English-only stretch with a silent dub');
+  t.push(rows(20)); await flush();
+  assert.equal(last().phase, 'playing');
+  assert.equal(last().waitingFor, undefined);
+  assert.equal(video.plays, 2, 'resumes on its own, as at the start');
+});
+
+test('accurate: a seek within the translated part plays on', async () => {
+  const {t, video, last} = await playingAccurate();
+  video.seek(5);
+  await flush();
+  assert.equal(last().phase, 'playing');
+  assert.deepEqual(t.focused, [['job1', 5]]);
+});
+
+test('accurate: after skipping the wait once, seeks never hold again', async () => {
+  const t = controllableApi();
+  const {session, video, last} = setup({api: t.api});
+  session.start();
+  await flush();
+  session.skipWait(); await flush();
+  video.seek(150); await flush();
+  assert.equal(last().phase, 'playing');
+  assert.deepEqual(t.focused, [['job1', 150]], 'the jump is still translated first');
+});
+
+test('instant: a seek is translated first but never holds the video', async () => {
+  const t = controllableApi();
+  const {session, video, last} = setup({api: t.api, dub: {on: true, start: 'instant', engine: 'seamless'}, voice: translatingVoice()});
+  session.start();
+  await flush();
+  video.seek(150); await flush();
+  assert.equal(last().phase, 'playing');
+  assert.equal(video.paused, false);
+  assert.deepEqual(t.focused, [['job1', 150]]);
+});
+
+test('once the translation is finished, seeking is left to the player', async () => {
+  const {t, video, last} = await playingAccurate();
+  t.finish(rows(20)); await flush();
+  video.seek(150); await flush();
+  assert.equal(last().phase, 'playing');
+  assert.deepEqual(t.focused, []);
+});
+
+test('a lecture opened mid-way is translated from where it starts', async () => {
+  const t = controllableApi();
+  const {session, video} = setup({api: t.api});
+  video.currentTime = 75;
+  session.start();
+  await flush();
+  assert.deepEqual(t.focused, [['job1', 75]]);
 });

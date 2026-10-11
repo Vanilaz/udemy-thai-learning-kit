@@ -15,7 +15,6 @@ import shutil
 import subprocess
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .glossary import Glossary
@@ -92,8 +91,13 @@ def translate_text(
     on_progress: Callable[[int, int], None] | None = None,
     mode: str = "subtitle",
     on_chunk: Callable[[int, str], None] | None = None,
+    focus: Callable[[], float | None] | None = None,
 ) -> list[str]:
     """Translate a Lesson in memory; return each chunk's raw answer text.
+
+    `focus()` returns where the viewer is watching (seconds), or None. It is
+    read before each chunk is started, so a viewer who jumps ahead gets that
+    part translated next instead of waiting for everything before it.
 
     `on_chunk(index, answer)` fires the moment each chunk comes back, so the
     caller can publish a partial translation instead of making the viewer wait
@@ -119,21 +123,41 @@ def translate_text(
     # inside a single lecture.
     if len(chunks) > 1 and MAX_PARALLEL_CHUNKS > 1:
         return _translate_parallel(
-            agy, lesson, chunks, glossary_block, effort, model, on_progress, mode, on_chunk
+            agy, lesson, chunks, glossary_block, effort, model, on_progress, mode, on_chunk, focus
         )
 
-    answers: list[str] = []
-    for index, chunk in enumerate(chunks, start=1):
-        label = f"[{index}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}"
+    starts = [chunk[0].start for chunk in chunks]
+    pending = set(range(len(chunks)))
+    answers: list[str | None] = [None] * len(chunks)
+    while pending:
+        index = next_chunk(pending, starts, focus() if focus else None)
+        pending.discard(index)
+        chunk = chunks[index]
+        label = f"[{index + 1}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}"
         print(f"  {label} — กำลังแปลด้วย agy ...", flush=True)
-        answer = _run_chunk(agy, lesson, chunk, glossary_block, effort, model, mode, label)
-        answers.append(answer)
+        answers[index] = _run_chunk(agy, lesson, chunk, glossary_block, effort, model, mode, label)
         if on_chunk:
-            on_chunk(index - 1, answer)
+            on_chunk(index, answers[index])
         if on_progress:
-            on_progress(index, len(chunks))
+            on_progress(len(chunks) - len(pending), len(chunks))
 
-    return answers
+    return [a for a in answers if a is not None]
+
+
+def next_chunk(pending: set[int], starts: list[float | None], focus: float | None) -> int:
+    """Which pending chunk to translate next.
+
+    Without a focus, in order. With one, the chunk the viewer is in, then the
+    ones after it (the runway they are about to watch), and only then the part
+    they skipped. Chunks without timing keep their order.
+    """
+    ordered = sorted(pending)
+    if focus is None or any(starts[i] is None for i in ordered):
+        return ordered[0]
+    # The chunk holding the focus starts at or before it; everything later follows.
+    holding = max((i for i in range(len(starts)) if starts[i] is not None and starts[i] <= focus), default=0)
+    ahead = [i for i in ordered if i >= holding]
+    return ahead[0] if ahead else ordered[0]
 
 
 def _run_chunk(
@@ -199,42 +223,54 @@ def _translate_parallel(
     on_progress: Callable[[int, int], None] | None,
     mode: str,
     on_chunk: Callable[[int, str], None] | None = None,
+    focus: Callable[[], float | None] | None = None,
 ) -> list[str]:
     workers = min(MAX_PARALLEL_CHUNKS, len(chunks))
     print(f"  แปล {len(chunks)} ช่วงพร้อมกัน {workers} ตัว ...", flush=True)
 
+    starts = [chunk[0].start for chunk in chunks]
+    pending = set(range(len(chunks)))
     answers: list[str | None] = [None] * len(chunks)
+    errors: list[BaseException] = []
     done = 0
     lock = threading.Lock()
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(
-                _run_chunk,
-                agy,
-                lesson,
-                chunk,
-                glossary_block,
-                effort,
-                model,
-                mode,
-                f"[{i + 1}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}",
-            ): i
-            for i, chunk in enumerate(chunks)
-        }
-        for future in as_completed(futures):
-            index = futures[future]
-            # Let the first failure propagate: a lecture missing a chunk is not
-            # a partial success, and the caller reports it to the extension.
-            answers[index] = future.result()
+    # Each worker picks its next chunk only when it is free, so a change of
+    # focus (the viewer seeking) reorders everything not yet started.
+    def worker() -> None:
+        nonlocal done
+        while True:
             with lock:
+                if errors or not pending:
+                    return
+                index = next_chunk(pending, starts, focus() if focus else None)
+                pending.discard(index)
+            chunk = chunks[index]
+            label = f"[{index + 1}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}"
+            try:
+                answer = _run_chunk(agy, lesson, chunk, glossary_block, effort, model, mode, label)
+            except BaseException as exc:  # the first failure fails the lecture
+                with lock:
+                    errors.append(exc)
+                return
+            with lock:
+                answers[index] = answer
                 if on_chunk:
-                    on_chunk(index, answers[index])
+                    on_chunk(index, answer)
                 done += 1
                 print(f"  เสร็จ {done}/{len(chunks)} ช่วง", flush=True)
                 if on_progress:
                     on_progress(done, len(chunks))
 
+    threads = [threading.Thread(target=worker, name=f"udth-chunk-{n}", daemon=True) for n in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        # A lecture missing a chunk is not a partial success; the caller
+        # reports it to the extension.
+        raise errors[0]
     return [a for a in answers if a is not None]
 
 

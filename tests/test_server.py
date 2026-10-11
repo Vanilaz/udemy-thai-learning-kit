@@ -97,6 +97,13 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request("POST", "/translate", raw="{")[0], 400)
         self.assertEqual(self.request("POST", "/translate", raw="{}", headers={"Content-Type": "text/plain"})[0], 415)
 
+    def test_viewer_focus_is_recorded_for_a_job(self):
+        key = "a" * 20
+        self.assertEqual(self.request("POST", f"/job/{key}/focus", {"time": 412.5})[0], 200)
+        self.assertEqual(s._focus_of(key)(), 412.5)
+        for bad in ({"time": "soon"}, {"time": -1}, {}):
+            self.assertEqual(self.request("POST", f"/job/{key}/focus", bad)[0], 400)
+
     def test_origin_and_host_guards(self):
         for origin in ("https://untrusted.invalid", "null", "https://www.youtube.com"):
             self.assertEqual(self.request("OPTIONS", "/translate", headers={"Origin": origin})[0], 403)

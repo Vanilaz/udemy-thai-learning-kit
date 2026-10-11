@@ -29,8 +29,10 @@
    * @param {(sentenceId: string) => void} [deps.onDraft]  a draft text arrived
    * @param {(error: Error) => void} [deps.onIssue]        a line could not be voiced
    * @param {() => number} [deps.now]
+   * @param {(...args: any[]) => void} [deps.debug]  diagnostic trace, off by default
    */
-  function createDubber({ video, timeline, voice, settings, onDraft = () => {}, onIssue = () => {}, now = Date.now }) {
+  function createDubber({ video, timeline, voice, settings, onDraft = () => {}, onIssue = () => {}, now = Date.now,
+    debug = () => {} }) {
     let cursor = 0;
     let token = 0;
     let current = null; // { deadline, handle }
@@ -80,6 +82,7 @@
     function resync() {
       stop();
       cursor = timeline.nextIndexAt(video.currentTime);
+      debug("ตำแหน่งใหม่", Math.round(video.currentTime), "วินาที -> ประโยค", cursor);
     }
 
     // Turn the instructor down while dubbing; give the volume back after.
@@ -118,10 +121,13 @@
       // Synthesis took so long the instructor has moved on: saying it now
       // would talk over the next sentence.
       if (video.currentTime > sentence.end + LATE_TOLERANCE) {
+        debug("ข้ามประโยค", sentence.index, "เสียงมาช้าเกินไป");
         current = null;
         tick();
         return;
       }
+      debug("พากย์ประโยค", sentence.index, `${Math.round(sentence.start)}s`, plan.words.lang ? "จากต้นฉบับ" : "จากคำแปล AI",
+        `ตอนวิดีโอ ${Math.round(video.currentTime)}s`);
       const handle = voice.speak(plan.words, {
         volume: settings().volume,
         fitRate: (seconds) => {
