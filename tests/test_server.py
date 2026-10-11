@@ -17,7 +17,7 @@ class FakeTts:
     def catalogue(self):
         return []
 
-    def synthesize(self, text, voice):
+    def synthesize(self, text, voice, source_lang=None):
         raise TtsError("Unavailable test engine")
 
 
