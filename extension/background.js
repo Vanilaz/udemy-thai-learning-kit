@@ -125,6 +125,22 @@ async function synthesizeSpeech(payload) {
   };
 }
 
+// Ask the server to load a local voice model now, and report how far it got.
+// Safe to repeat: while loading, or once loaded, it only answers the state.
+async function warmupVoice(engine) {
+  const base = await serverUrl();
+  const response = await localFetch(`${base}/tts/warmup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ engine }),
+  }, 5000);
+  // An older server has no such route — treat that as "nothing to wait for".
+  if (response.status === 404) return { state: "none", error: "" };
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `เซิร์ฟเวอร์ตอบ ${response.status}`);
+  return data;
+}
+
 // Read the caption list straight out of YouTube's live player object.
 //
 // A content script runs in an isolated world and cannot see the page's own
@@ -198,6 +214,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "queueStatus") {
     queueStatus()
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
+  }
+
+  if (message.type === "warmupVoice") {
+    warmupVoice(message.engine)
       .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
     return true;

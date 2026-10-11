@@ -1,18 +1,79 @@
-/* Subtitle overlay drawn on top of the Udemy player.
-   pointer-events stays off so play/pause and the scrubber still work. */
+/* ฮองเรียน — everything drawn on the Udemy / YouTube page.
+ *
+ * Design: flat, dark "ink" surfaces with a single teal accent. It sits on top
+ * of a video, so it must read on any picture and never compete with it: no
+ * gradients, one accent, dark text on the accent (white on teal is ~2.5:1 and
+ * fails WCAG; #042F2B on #2DD4BF is ~7.9:1).
+ *
+ * Tokens are scoped to our own root elements, never :root, so nothing leaks
+ * into the host page. Three layers: primitive -> semantic -> component.
+ */
 
-/* While we are drawing Thai subtitles, hide Udemy's own caption layer —
-   otherwise its English line stacks on top of ours and the two overlap.
-   Only the display is suppressed; Udemy's caption state is left untouched,
-   so turning our overlay off brings its subtitles straight back.
-   The class hashes change between Udemy builds, hence the substring match. */
+.udth-overlay,
+.udth-status,
+.udth-tool,
+.udth-pill-floating,
+.udth-menu,
+.udth-gate,
+.udth-batch {
+  /* primitive */
+  --udth-ink-950: #07090e;
+  --udth-ink-900: #0d1119;
+  --udth-ink-800: #151b27;
+  --udth-gray-100: #f3f5f9;
+  --udth-gray-300: #c3cad6;
+  --udth-gray-400: #8f99ab;
+  --udth-teal-300: #5eead4;
+  --udth-teal-400: #2dd4bf;
+  --udth-teal-950: #042f2b;
+  --udth-green-400: #4ade80;
+  --udth-rose-400: #fb7185;
+  --udth-rose-200: #fecdd3;
+
+  /* semantic */
+  --udth-font: "Noto Sans Thai", "IBM Plex Sans Thai", "Leelawadee UI", "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
+  --udth-surface: rgba(13, 17, 25, 0.95);
+  --udth-surface-solid: var(--udth-ink-900);
+  --udth-raise-1: rgba(255, 255, 255, 0.045);
+  --udth-raise-2: rgba(255, 255, 255, 0.085);
+  --udth-raise-3: rgba(255, 255, 255, 0.13);
+  --udth-line: rgba(255, 255, 255, 0.08);
+  --udth-line-strong: rgba(255, 255, 255, 0.16);
+  --udth-text: var(--udth-gray-100);
+  --udth-text-2: var(--udth-gray-300);
+  --udth-text-3: var(--udth-gray-400);
+  --udth-accent: var(--udth-teal-400);
+  --udth-accent-hi: var(--udth-teal-300);
+  --udth-on-accent: var(--udth-teal-950);
+  --udth-accent-soft: rgba(45, 212, 191, 0.14);
+  --udth-ok: var(--udth-green-400);
+  --udth-err: var(--udth-rose-400);
+  --udth-err-text: var(--udth-rose-200);
+  --udth-err-soft: rgba(251, 113, 133, 0.14);
+  --udth-focus: var(--udth-teal-300);
+  --udth-r-sm: 8px;
+  --udth-r-md: 12px;
+  --udth-r-lg: 16px;
+  --udth-r-xl: 20px;
+  --udth-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --udth-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --udth-fast: 150ms;
+}
+
+/* While we draw Thai subtitles, hide the site's own caption layer — otherwise
+   its English line stacks on ours. Only the display is suppressed; the site's
+   caption state is untouched, so turning ours off brings theirs straight back.
+   Udemy's class hashes change between builds, hence the substring match. */
 html.udth-hide-native [class*="captions-display-module--captions-container"],
 html.udth-hide-native [class*="captions-display-module--captions-cue-text"],
-/* YouTube's own caption layer, hidden on the same terms. */
 html.udth-hide-native .ytp-caption-window-container {
   display: none !important;
 }
 
+/* ------------------------------------------------------------- subtitles */
+
+/* pointer-events stays off so play/pause and the scrubber still work. */
 .udth-overlay {
   position: absolute;
   left: 0;
@@ -23,469 +84,411 @@ html.udth-hide-native .ytp-caption-window-container {
   z-index: 2147483000;
   display: flex;
   justify-content: center;
-  pointer-events: none;
-  padding: 0 8%;
   box-sizing: border-box;
+  padding: 0 6%;
+  pointer-events: none;
+  transition: bottom 220ms var(--udth-ease);
 }
+
+.udth-overlay[data-size="s"] { --udth-th: clamp(15px, 1.4vw, 19px); --udth-en: clamp(12px, 0.95vw, 13px); }
+.udth-overlay[data-size="m"],
+.udth-overlay:not([data-size]) { --udth-th: clamp(17px, 1.7vw, 23px); --udth-en: clamp(12.5px, 1.1vw, 15px); }
+.udth-overlay[data-size="l"] { --udth-th: clamp(20px, 2.1vw, 29px); --udth-en: clamp(14px, 1.3vw, 18px); }
 
 .udth-line {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
-  max-width: min(100%, 780px);
+  max-width: min(100%, 820px);
   text-align: center;
 }
 
 .udth-line:has(.udth-th, .udth-en) {
-  position: relative;
-  padding: 8px 18px 10px;
-  border-radius: 12px;
-  background: rgba(12, 12, 18, 0.82);
-  backdrop-filter: blur(8px) saturate(140%);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  overflow: hidden;
+  padding: 7px 16px 9px;
+  border-radius: var(--udth-r-md);
+  background: rgba(7, 9, 14, 0.8);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
-.udth-line:has(.udth-th, .udth-en)::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: linear-gradient(180deg, #0ea5e9, #14b8a6);
-}
-
-.udth-en,
-.udth-th {
+.udth-th,
+.udth-en {
   display: block;
   max-width: 100%;
   margin: 0;
   padding: 0;
-  color: #fff;
-  font-family: "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--udth-font);
   text-wrap: balance;
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
 }
 
 .udth-th {
+  color: #fff;
   font-size: var(--udth-th, 20px);
   font-weight: 500;
-  line-height: 1.6;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  line-height: 1.55;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
 .udth-en {
   order: 2;
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 3px;
+  color: var(--udth-text-2);
   font-size: var(--udth-en, 14px);
   font-weight: 400;
   line-height: 1.45;
-  color: #aeb4c4;
 }
 
-.udth-overlay[data-size="s"] { --udth-th: clamp(15px, 1.4vw, 19px); --udth-en: clamp(11.5px, 0.9vw, 13px); }
-.udth-overlay[data-size="m"], .udth-overlay:not([data-size]) { --udth-th: clamp(17px, 1.7vw, 23px); --udth-en: clamp(12.5px, 1.1vw, 15px); }
-.udth-overlay[data-size="l"] { --udth-th: clamp(20px, 2.1vw, 29px); --udth-en: clamp(14px, 1.3vw, 18px); }
-
-.udth-overlay {
-  transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .udth-overlay {
-    transition: none;
-  }
-}
-
+/* Short-lived status line ("พร้อมแล้ว — ซับไทย 214 บรรทัด"). */
 .udth-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.82);
-  color: #e9ecf1;
-  font-size: clamp(12px, 1.2vw, 15px);
+  border: 1px solid var(--udth-line-strong);
+  background: var(--udth-surface);
+  color: var(--udth-text);
+  font-family: var(--udth-font);
+  font-size: clamp(12px, 1.15vw, 14px);
   font-weight: 500;
-  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-.udth-status.udth-ok {
-  border-color: rgba(80, 200, 130, 0.55);
-  color: #b7f0cd;
+.udth-status::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--udth-text-3);
 }
+
+.udth-status.udth-ok::before { background: var(--udth-ok); }
 
 .udth-status.udth-error {
-  border-color: rgba(240, 110, 110, 0.6);
-  color: #ffc9c9;
-  background: rgba(60, 12, 12, 0.9);
+  border-color: rgba(251, 113, 133, 0.45);
+  background: rgba(40, 10, 16, 0.94);
+  color: var(--udth-err-text);
 }
 
-/* ------------------------------------------------ player control button */
+.udth-status.udth-error::before { background: var(--udth-err); }
 
-/* Docked beside the player's own tools. It copies the native button's class
-   for size and hover; everything below only draws the glyph and the dot. */
+/* --------------------------------------------------- player control button */
+
+/* Docked among the player's own tools: same size, only our glyph and dot. */
 .udth-tool {
   position: relative;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  width: 36px;
+  width: 40px;
   height: 40px;
   margin: 0;
   padding: 0;
   border: 0;
+  border-radius: var(--udth-r-sm);
   background: transparent;
   color: #fff;
   cursor: pointer;
+  transition: background var(--udth-fast) ease;
 }
+
+.udth-tool:hover { background: rgba(255, 255, 255, 0.12); }
 
 .udth-tool svg {
   display: block;
-  opacity: 0.92;
-  transition: transform 160ms ease, opacity 160ms ease;
+  transition: transform var(--udth-fast) ease;
 }
 
-.udth-tool:hover svg,
-.udth-tool:focus-visible svg {
-  opacity: 1;
-  transform: scale(1.08);
+.udth-tool:active svg { transform: scale(0.92); }
+
+.udth-tool:focus-visible,
+.udth-pill-floating:focus-visible {
+  outline: 2px solid var(--udth-focus);
+  outline-offset: -2px;
 }
 
-.udth-tool:focus-visible {
-  outline: 2px solid #5eead4;
-  outline-offset: -4px;
-  border-radius: 8px;
-}
-
-/* A small dot says "on" without opening anything — the same job a lit CC
-   button does. */
+/* "Something is on" at a glance — the job a lit CC button does. */
 .udth-dot {
   position: absolute;
-  right: 7px;
-  top: 7px;
+  right: 6px;
+  top: 6px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #6b7280;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
-  transition: background 160ms ease, box-shadow 160ms ease;
+  background: transparent;
+  transition: background var(--udth-fast) ease;
 }
 
 .udth-pill-on .udth-dot {
-  background: #34d399;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 0 10px rgba(52, 211, 153, 0.8);
+  background: var(--udth-accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
 }
 
-.udth-pill-open svg {
-  color: #99f6e4;
-  opacity: 1;
-}
+.udth-pill-open { background: rgba(255, 255, 255, 0.14); }
+.udth-pill-open svg { color: var(--udth-accent-hi); }
 
-/* Only when no control bar could be found: a round floating button, still an
-   icon, never a word on its own. */
+/* Only when no control bar could be found: a round floating button. */
 .udth-pill-floating {
   position: absolute;
   right: 14px;
   bottom: 64px;
   z-index: 2147483100;
-  width: 40px;
-  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--udth-line-strong);
   border-radius: 50%;
-  background: rgba(8, 14, 20, 0.82);
+  background: var(--udth-surface);
   backdrop-filter: blur(8px);
   color: #fff;
   cursor: pointer;
 }
 
-/* ------------------------------------------------------------ player menu */
+/* ------------------------------------------------------------- player menu */
 
-.udth-menu[hidden] {
-  display: none;
-}
+.udth-menu[hidden] { display: none; }
 
 .udth-menu {
   box-sizing: border-box;
   position: absolute;
-  right: 14px;
-  bottom: 72px;
+  right: 12px;
+  bottom: 64px;
   z-index: 2147483200;
-  width: 332px;
-  max-width: calc(100% - 28px);
-  max-height: calc(100% - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 80px);
+  padding: 0 12px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-  padding: 0 14px 12px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(8, 14, 20, 0.92);
-  backdrop-filter: blur(22px) saturate(160%);
-  color: #eef0f6;
-  font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  animation: udth-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  border-radius: var(--udth-r-xl);
+  background: var(--udth-surface);
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: var(--udth-shadow);
+  color: var(--udth-text);
+  font: 500 13px/1.5 var(--udth-font);
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+  animation: udth-pop 180ms var(--udth-ease);
   transform-origin: bottom right;
 }
 
+.udth-menu * { box-sizing: border-box; }
+
 @keyframes udth-pop {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.96);
-  }
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
 }
 
-/* Header: a brand tile, name, language pair and version — and it stays put
-   while the body scrolls, so the menu never loses its title. */
+/* Header stays put while the body scrolls on a small player. */
 .udth-menu-head {
   position: sticky;
   top: 0;
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 11px;
-  margin: 0 -14px 8px;
-  padding: 12px 14px 8px;
-  background: linear-gradient(180deg, rgba(8, 14, 20, 1) 70%, rgba(8, 14, 20, 0));
+  gap: 10px;
+  margin: 0 -12px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--udth-line);
+  background: var(--udth-surface-solid);
 }
 
 .udth-logo {
   display: grid;
   place-items: center;
   flex: none;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #0ea5e9, #34d399);
-  color: #fff;
-  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--udth-accent);
+  color: var(--udth-on-accent);
+  font-size: 18px;
   font-weight: 800;
-  box-shadow: 0 6px 18px rgba(20, 184, 166, 0.45);
+  line-height: 1;
 }
 
-.udth-menu-titles {
-  flex: 1;
-  min-width: 0;
-}
+.udth-menu-titles { flex: 1; min-width: 0; line-height: 1.25; }
 
-.udth-menu-title {
-  font-size: 15.5px;
-  font-weight: 800;
-  line-height: 1.25;
-}
+.udth-menu-title { font-size: 14.5px; font-weight: 700; }
 
 .udth-menu-sub {
   display: flex;
   align-items: center;
-  gap: 5px;
-  color: #aeb4c4;
+  gap: 4px;
+  color: var(--udth-text-3);
   font-size: 12px;
   font-weight: 500;
 }
 
-.udth-menu-arrow {
-  color: #5eead4;
-}
+.udth-menu-arrow { color: var(--udth-accent); }
 
 .udth-ver {
   flex: none;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(94, 234, 212, 0.16);
-  color: #99f6e4;
-  font-size: 11px;
-  font-weight: 700;
+  color: var(--udth-text-3);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-/* Two switch tiles: icon, name, state. */
-.udth-tiles {
+.udth-icon-btn {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.udth-chip,
-.udth-btn {
-  font: inherit;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--udth-r-sm);
+  background: transparent;
+  color: var(--udth-text-2);
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
+  transition: background var(--udth-fast) ease, color var(--udth-fast) ease;
 }
 
-.udth-chip:active,
-.udth-btn:active {
-  transform: scale(0.97);
+.udth-icon-btn:hover { background: var(--udth-raise-2); color: var(--udth-text); }
+
+/* A group of related controls on one quiet card. */
+.udth-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--udth-r-lg);
+  background: var(--udth-raise-1);
 }
 
-.udth-chip:focus-visible,
-.udth-btn:focus-visible {
-  outline: 2px solid #5eead4;
-  outline-offset: 2px;
+.udth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.udth-tile {
+.udth-row-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--udth-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.udth-row-label svg { color: var(--udth-text-3); }
+
+/* Segmented control: one choice of a few, all visible. */
+.udth-seg {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--udth-r-md);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.udth-seg button {
+  display: grid;
+  place-items: center;
+  min-height: 34px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--udth-text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--udth-fast) ease, color var(--udth-fast) ease;
+}
+
+.udth-seg button:hover { background: var(--udth-raise-2); color: var(--udth-text); }
+
+.udth-seg button.udth-seg-on {
+  background: var(--udth-accent);
+  color: var(--udth-on-accent);
+}
+
+/* Text size: "ก" drawn at the three sizes it selects. */
+.udth-seg-size { flex: none; width: 132px; }
+.udth-seg-size button { min-height: 30px; padding: 0; line-height: 1; }
+.udth-seg-size [data-val="s"] { font-size: 12px; }
+.udth-seg-size [data-val="m"] { font-size: 15px; }
+.udth-seg-size [data-val="l"] { font-size: 18px; }
+
+/* Dubbing on/off: the one switch most people come here for. */
+.udth-dubrow {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #c4c9d6;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--udth-r-lg);
+  background: var(--udth-raise-1);
+  color: var(--udth-text);
+  font: inherit;
   text-align: left;
+  cursor: pointer;
+  transition: background var(--udth-fast) ease;
 }
 
-.udth-tile:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
+.udth-dubrow:hover { background: var(--udth-raise-2); }
 
-.udth-tile-ico {
+.udth-dubrow-ico {
   display: grid;
   place-items: center;
   flex: none;
   width: 34px;
   height: 34px;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: var(--udth-raise-2);
+  color: var(--udth-text-2);
+  transition: background var(--udth-fast) ease, color var(--udth-fast) ease;
 }
 
-.udth-tile-txt {
+.udth-dubrow-txt {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
-.udth-tile-txt b {
-  font-size: 13.5px;
-  font-weight: 700;
-}
+.udth-dubrow-txt b { font-size: 13.5px; font-weight: 700; }
 
-.udth-tile-txt small {
-  font-size: 11.5px;
-  font-weight: 500;
-  opacity: 0.75;
-}
-
-.udth-chip-on {
-  border-color: transparent;
-  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
-  color: #fff;
-  box-shadow: 0 8px 22px rgba(14, 165, 233, 0.45);
-}
-
-.udth-chip-on:hover {
-  background: linear-gradient(135deg, #38bdf8, #34d399);
-}
-
-.udth-chip-on .udth-tile-ico {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.udth-section {
-  display: none;
-  margin: 0 2px 6px;
-  color: #8f96a8;
+.udth-dubrow-txt small {
+  overflow: hidden;
+  color: var(--udth-text-3);
   font-size: 12px;
-  font-weight: 700;
-}
-
-.udth-card {
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.udth-field {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 2px 10px;
-  margin-bottom: 8px;
-}
-
-.udth-card > .udth-field:last-child {
-  margin-bottom: 0;
-}
-
-.udth-field > span {
-  color: #c4c9d6;
-  font-size: 12.5px;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.udth-field select {
-  grid-column: 1 / -1;
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  background: #0d1a24;
-  color: #eef0f6;
-  font: inherit;
-}
-
-.udth-field select:focus-visible {
-  outline: 2px solid #5eead4;
-  outline-offset: 1px;
-}
-
-.udth-field input[type="range"] {
-  grid-column: 1 / -1;
-  width: 100%;
-  height: 4px;
-  margin: 5px 0 1px;
-  accent-color: #5eead4;
-  cursor: pointer;
-}
-
-.udth-field output {
-  color: #99f6e4;
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-/* A real switch instead of a bare checkbox. */
-.udth-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  color: #d3d7e2;
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.udth-check input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
+.udth-dubrow-on .udth-dubrow-ico { background: var(--udth-accent-soft); color: var(--udth-accent-hi); }
+.udth-dubrow-on .udth-dubrow-txt small { color: var(--udth-accent-hi); }
 
 .udth-switch {
   position: relative;
   flex: none;
-  width: 38px;
+  width: 36px;
   height: 22px;
   border-radius: 999px;
-  background: #4b5163;
-  transition: background 160ms ease;
+  background: var(--udth-raise-3);
+  transition: background var(--udth-fast) ease;
 }
 
 .udth-switch::after {
@@ -498,88 +501,152 @@ html.udth-hide-native .ytp-caption-window-container {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: transform 160ms ease;
+  transition: transform 180ms var(--udth-ease);
 }
 
-.udth-check input:checked + .udth-switch {
-  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+.udth-dubrow-on .udth-switch { background: var(--udth-accent); }
+.udth-dubrow-on .udth-switch::after { transform: translateX(14px); background: var(--udth-on-accent); }
+
+/* Advanced voice settings, collapsed by default. */
+.udth-adv { border-radius: var(--udth-r-lg); background: var(--udth-raise-1); }
+
+.udth-adv summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--udth-r-lg);
+  color: var(--udth-text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
 }
 
-.udth-check input:checked + .udth-switch::after {
-  transform: translateX(16px);
+.udth-adv summary::-webkit-details-marker { display: none; }
+.udth-adv summary:hover { color: var(--udth-text); }
+
+.udth-adv summary .udth-chev {
+  margin-left: auto;
+  color: var(--udth-text-3);
+  transition: transform 180ms var(--udth-ease);
 }
 
-.udth-check input:focus-visible + .udth-switch {
-  outline: 2px solid #5eead4;
-  outline-offset: 2px;
+.udth-adv[open] summary .udth-chev { transform: rotate(180deg); }
+
+.udth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 10px 12px;
+}
+
+.udth-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.udth-field > span { color: var(--udth-text-2); font-size: 12px; font-weight: 600; }
+
+/* Value on the label's row, not a line of its own under the slider. */
+.udth-field output {
+  grid-row: 1;
+  grid-column: 2;
+  color: var(--udth-accent-hi);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.udth-field select {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--udth-line-strong);
+  border-radius: 10px;
+  background: var(--udth-ink-800);
+  color: var(--udth-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.udth-field input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--udth-accent);
+  cursor: pointer;
 }
 
 .udth-menu-actions {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: auto 1fr;
   gap: 8px;
 }
 
 .udth-btn {
-  min-height: 38px;
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--udth-line-strong);
+  border-radius: var(--udth-r-md);
   background: transparent;
-  color: #e4e7ef;
+  color: var(--udth-text);
+  font: inherit;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--udth-fast) ease, transform 100ms ease;
 }
 
-.udth-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
+.udth-btn:hover { background: var(--udth-raise-2); }
+.udth-btn:active { transform: scale(0.98); }
 
 .udth-btn-primary {
   border-color: transparent;
-  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
+  background: var(--udth-accent);
+  color: var(--udth-on-accent);
 }
 
-.udth-btn-primary:hover {
-  background: linear-gradient(135deg, #38bdf8, #34d399);
-}
+.udth-btn-primary:hover { background: var(--udth-accent-hi); }
 
-.udth-panel-note:not(:empty) {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #b6bccb;
+.udth-panel-note:empty { display: none; }
+
+.udth-panel-note {
+  padding: 9px 11px;
+  border-radius: var(--udth-r-md);
+  background: var(--udth-raise-1);
+  color: var(--udth-text-2);
   font-size: 12px;
-  font-weight: 400;
-  line-height: 1.6;
+  font-weight: 500;
+  line-height: 1.55;
 }
 
-.udth-panel-note-error:not(:empty) {
-  background: rgba(239, 68, 68, 0.15);
-  color: #fecaca;
+.udth-panel-note-error { background: var(--udth-err-soft); color: var(--udth-err-text); }
+
+.udth-menu button:focus-visible,
+.udth-menu select:focus-visible,
+.udth-menu input:focus-visible,
+.udth-adv summary:focus-visible {
+  outline: 2px solid var(--udth-focus);
+  outline-offset: 2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .udth-menu {
-    animation: none;
-  }
-  .udth-switch,
-  .udth-switch::after,
-  .udth-chip,
-  .udth-btn {
-    transition: none;
-  }
-}
+/* ------------------------------------------------------------ loading gate */
 
-/* -------------------------------------------------------- loading gate */
-
-/* Covers the whole viewport while a lecture is being translated. Unlike the
-   subtitle overlay this one *does* take pointer events: the point is to stop
-   the lecture being watched untranslated, so clicks must not reach the player
-   underneath. The skip button is the only way through. */
+/* Covers the page while a lecture is translated or a voice model loads.
+   Unlike the subtitles it *does* take pointer events: the point is to stop the
+   lecture being watched before it can be understood. Skip is the way through. */
 .udth-gate {
   position: fixed;
   inset: 0;
@@ -588,111 +655,142 @@ html.udth-hide-native .ytp-caption-window-container {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(8, 8, 16, 0.7);
-  backdrop-filter: blur(6px);
-  font: 500 14px/1.6 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(8px);
+  font: 500 14px/1.6 var(--udth-font);
+  -webkit-font-smoothing: antialiased;
+  animation: udth-fade 200ms ease-out;
 }
 
+@keyframes udth-fade { from { opacity: 0; } }
+
 .udth-gate-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  width: 380px;
+  gap: 10px;
+  width: 400px;
   max-width: 100%;
-  padding: 26px 24px 22px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(16, 28, 38, 0.97), rgba(16, 16, 26, 0.98));
-  color: #eceef3;
+  padding: 28px 24px 20px;
+  overflow: hidden;
+  border-radius: var(--udth-r-xl);
+  background: var(--udth-surface-solid);
+  box-shadow: var(--udth-shadow);
+  color: var(--udth-text);
   text-align: center;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 
+/* Brand mark inside a turning ring: the one loader for everything we wait on. */
 .udth-gate-spinner {
-  width: 34px;
-  height: 34px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 6px;
+}
+
+.udth-gate-spinner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.16);
-  border-top-color: #5eead4;
-  animation: udth-spin 850ms linear infinite;
+  border: 3px solid var(--udth-raise-2);
+  border-top-color: var(--udth-accent);
+  animation: udth-spin 900ms linear infinite;
 }
 
-@keyframes udth-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.udth-gate-spinner::after {
+  content: "ท";
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: var(--udth-accent);
+  color: var(--udth-on-accent);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
 }
 
-.udth-gate-title {
-  font-size: 15px;
-  font-weight: 600;
-}
+@keyframes udth-spin { to { transform: rotate(360deg); } }
+
+.udth-gate-title { font-size: 16px; font-weight: 700; line-height: 1.45; }
 
 .udth-gate-detail {
-  color: #a9aeba;
-  font-size: 12.5px;
-  font-weight: 400;
-  /* A long lecture title must not stretch the card down the screen. */
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  color: var(--udth-text-2);
+  font-size: 13px;
+  font-weight: 400;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Indeterminate progress along the bottom edge of the card. */
+.udth-gate-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  height: 3px;
+  background: var(--udth-accent);
+  animation: udth-slide 1.4s var(--udth-ease) infinite;
+}
+
+@keyframes udth-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
 }
 
 .udth-gate-skip {
-  margin-top: 4px;
-  padding: 9px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  margin-top: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--udth-line-strong);
   border-radius: 999px;
   background: transparent;
-  color: #c9ccd4;
+  color: var(--udth-text-2);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
+  transition: background var(--udth-fast) ease, color var(--udth-fast) ease;
 }
 
-.udth-gate-skip:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+.udth-gate-skip:hover { background: var(--udth-raise-2); color: var(--udth-text); }
+
+.udth-gate-skip:focus-visible {
+  outline: 2px solid var(--udth-focus);
+  outline-offset: 2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .udth-gate-spinner {
-    animation-duration: 2s;
-  }
-}
+/* ------------------------------------------------------- section batch badge */
 
-/* ------------------------------------------------------ section batch badge */
-
-/* Reports the pre-translation queue while the user carries on watching.
-   Deliberately its own dark card rather than inheriting Udemy's colors: it
-   floats over both the light and dark themes and over the black player, so a
-   fixed palette is the only way to keep contrast predictable in all three. */
+/* Reports the pre-translation queue while the user carries on watching. Its
+   own dark card: it floats over light pages, dark pages and the black player,
+   so a fixed palette is the only way to keep contrast predictable. */
 .udth-batch {
   position: fixed;
   left: 16px;
   bottom: 16px;
   z-index: 2147483000;
-  width: 264px;
+  box-sizing: border-box;
+  width: 280px;
   max-width: calc(100vw - 32px);
-  padding: 11px 13px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(16, 28, 38, 0.95), rgba(16, 16, 26, 0.96));
+  padding: 12px 14px 13px;
+  border-radius: var(--udth-r-lg);
+  background: var(--udth-surface);
   backdrop-filter: blur(14px);
-  color: #eceef3;
-  font: 500 13px/1.55 "Noto Sans Thai", "Leelawadee UI", "Sarabun", "Tahoma", "Segoe UI", system-ui, sans-serif;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--udth-shadow);
+  color: var(--udth-text);
+  font: 500 13px/1.5 var(--udth-font);
   animation: udth-batch-in 200ms ease-out;
 }
 
-@keyframes udth-batch-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
+@keyframes udth-batch-in { from { opacity: 0; transform: translateY(8px); } }
 
 .udth-batch-head {
   display: flex;
@@ -701,94 +799,69 @@ html.udth-hide-native .ytp-caption-window-container {
   gap: 8px;
 }
 
-.udth-batch-title {
-  flex: 1;
-}
+.udth-batch-title { flex: 1; font-weight: 700; }
 
 .udth-batch-close {
+  display: grid;
+  place-items: center;
   flex: none;
-  width: 24px;
-  height: 24px;
-  margin: -3px -4px 0 0;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px 0 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--udth-r-sm);
   background: transparent;
-  color: inherit;
-  opacity: 0.6;
+  color: var(--udth-text-2);
   font: inherit;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
 }
 
-.udth-batch-close:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
-}
+.udth-batch-close:hover { background: var(--udth-raise-2); color: var(--udth-text); }
 
-/* Which lecture is being worked on. Two lines at most — a long course title
-   should not grow the card until it covers the player. */
+/* Two lines at most — a long course title must not grow it over the player. */
 .udth-batch-detail {
-  margin-top: 3px;
-  color: #a9aeba;
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--udth-text-3);
   font-size: 12px;
   font-weight: 400;
-  display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .udth-batch-track {
-  margin-top: 9px;
   height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  margin-top: 10px;
   overflow: hidden;
+  border-radius: 999px;
+  background: var(--udth-raise-2);
 }
 
 .udth-batch-fill {
-  height: 100%;
   width: 0;
+  height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0ea5e9, #5eead4);
+  background: var(--udth-accent);
   transition: width 220ms ease-out;
 }
 
-.udth-batch-ok {
-  border-color: rgba(80, 200, 130, 0.5);
-}
+.udth-batch-ok .udth-batch-fill { background: var(--udth-ok); }
+.udth-batch-error { background: rgba(40, 10, 16, 0.95); }
+.udth-batch-error .udth-batch-detail { color: var(--udth-err-text); }
 
-.udth-batch-ok .udth-batch-fill {
-  background: #56c98a;
-}
+/* ------------------------------------------------------------ article mode */
 
-.udth-batch-error {
-  border-color: rgba(240, 110, 110, 0.55);
-  background: rgba(48, 14, 14, 0.95);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .udth-batch {
-    animation: none;
-  }
-  .udth-batch-fill {
-    transition: none;
-  }
-}
-
-/* ---------------------------------------------------------- article mode */
-
-/* Panel holding the Thai translation of an Article lecture. Colors are
-   inherited from Udemy's own page so it works in both its light and dark
-   themes without guessing at their palette. */
+/* Thai translation of an Article lecture. Colours are inherited from the page,
+   so it works in Udemy's light and dark themes without guessing its palette. */
 .udth-doc {
   margin: 0 0 24px;
-  border: 1px solid currentColor;
-  border-color: color-mix(in srgb, currentColor 22%, transparent);
-  border-radius: 10px;
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 12px;
 }
 
 .udth-doc-bar {
@@ -796,21 +869,18 @@ html.udth-hide-native .ytp-caption-window-container {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 14px;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  padding: 10px 14px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  background: color-mix(in srgb, currentColor 6%, transparent);
 }
 
-.udth-doc-title {
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.01em;
-}
+.udth-doc-title { font-size: 0.95rem; font-weight: 700; }
 
 .udth-doc-toggle {
-  padding: 5px 12px;
-  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
-  border-radius: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 8px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -819,207 +889,65 @@ html.udth-hide-native .ytp-caption-window-container {
   cursor: pointer;
 }
 
-.udth-doc-toggle:hover {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
+.udth-doc-toggle:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 
-.udth-doc-body {
-  padding: 16px 18px;
-  /* Thai needs more line height than English to stay readable. */
-  line-height: 1.85;
-}
+/* Thai needs more line height than English to stay readable. */
+.udth-doc-body { padding: 16px 18px; line-height: 1.85; }
+.udth-doc-body > div > :first-child { margin-top: 0; }
+.udth-doc-body > div > :last-child { margin-bottom: 0; }
 
-.udth-doc-body > div > :first-child {
-  margin-top: 0;
-}
-
-.udth-doc-body > div > :last-child {
-  margin-bottom: 0;
-}
-
-/* Code the instructor wrote is passed through untranslated — make that
-   visually obvious so it is clear it was not tampered with. */
+/* Code is passed through untranslated — make that visibly obvious. */
 .udth-doc-body pre,
 .udth-doc-body code {
-  font-family: Consolas, "Courier New", monospace;
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
   font-size: 0.9em;
   line-height: 1.5;
 }
 
 .udth-doc-body pre {
   padding: 12px 14px;
-  border-radius: 8px;
   overflow-x: auto;
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
 
-.udth-doc-body .udth-status {
-  display: inline-block;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+/* Inside page content the status pill takes the page's colours instead. */
+.udth-doc-body .udth-status,
+.udth-quiz-banner .udth-status {
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
   color: inherit;
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
 }
 
-/* ------------------------------------------------------------- quiz mode */
+/* --------------------------------------------------------------- quiz mode */
 
-/* Thai is added *under* the English rather than replacing it: on an exam you
-   need the original wording available, and a shaky translation must never be
-   the only thing you can read. */
+/* Thai goes *under* the English: on an exam the original wording must stay
+   available, and a shaky translation must never be the only thing to read. */
 .udth-quiz-th {
   margin-top: 4px;
-  padding-left: 9px;
-  border-left: 3px solid color-mix(in srgb, currentColor 30%, transparent);
+  padding-left: 10px;
+  border-left: 3px solid color-mix(in srgb, currentColor 28%, transparent);
   font-size: 0.95em;
   line-height: 1.7;
   opacity: 0.92;
 }
 
-.udth-quiz-banner {
-  margin: 0 0 14px;
-}
+.udth-quiz-banner { margin: 0 0 14px; }
 
-.udth-quiz-banner .udth-status {
-  display: inline-block;
-  background: color-mix(in srgb, currentColor 12%, transparent);
-  color: inherit;
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-}
+/* ----------------------------------------------------------- reduced motion */
 
-/* ================= menu v2: short, segmented, advanced collapsed ================= */
-.udth-menu {
-  width: 300px;
-  padding: 0 14px 14px;
-}
-
-.udth-row-label {
-  margin: 10px 2px 6px;
-  color: #8fa0b3;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.udth-seg {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.udth-seg button {
-  min-height: 34px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 11px;
-  background: transparent;
-  color: #b9c4d2;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.udth-seg button:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.udth-seg button.udth-seg-on {
-  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.35);
-}
-
-.udth-seg button:focus-visible,
-.udth-dubrow:focus-visible,
-.udth-adv summary:focus-visible {
-  outline: 2px solid #5eead4;
-  outline-offset: 2px;
-}
-
-.udth-dubrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  margin-top: 12px;
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #e8edf3;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 150ms ease;
-}
-
-.udth-dubrow:hover {
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.udth-dubrow-txt {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.35;
-}
-
-.udth-dubrow-txt b {
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
-.udth-dubrow-txt small {
-  color: #8fa0b3;
-  font-size: 12px;
-}
-
-.udth-dubrow-on .udth-switch {
-  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
-}
-
-.udth-dubrow-on .udth-switch::after {
-  transform: translateX(16px);
-}
-
-.udth-dubrow-on .udth-dubrow-txt small {
-  color: #5eead4;
-}
-
-.udth-adv {
-  margin-top: 10px;
-}
-
-.udth-adv summary {
-  padding: 8px 4px;
-  color: #a9b6c6;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  list-style: none;
-}
-
-.udth-adv summary::-webkit-details-marker {
-  display: none;
-}
-
-.udth-adv summary::after {
-  content: " ▾";
-  color: #5eead4;
-}
-
-.udth-adv[open] summary::after {
-  content: " ▴";
-}
-
-.udth-adv .udth-card {
-  margin: 4px 0 0;
-}
-
-.udth-menu-actions {
-  margin-top: 6px;
+@media (prefers-reduced-motion: reduce) {
+  .udth-overlay,
+  .udth-menu,
+  .udth-gate,
+  .udth-batch,
+  .udth-batch-fill,
+  .udth-switch,
+  .udth-switch::after,
+  .udth-adv summary .udth-chev {
+    animation: none;
+    transition: none;
+  }
+  .udth-gate-spinner::before { animation-duration: 2.4s; }
+  .udth-gate-card::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
 }

@@ -62,8 +62,12 @@ test('manual resume uses the same audio offset and recovers from rejected playba
 test('new subtitle fragments cannot rewrite a sentence already being spoken', () => {
   const state = {dub:{cursor:1,segments:[{start:0,end:2,text:'First',budgetEnd:5}],playing:true}};
   let resets = 0;
+  // buildDubSegments now asks whether the engine speaks from the original;
+  // edge does not, so this is the Thai-only plan the test was written for.
+  state.ttsEngine = 'edge';
   const c = context({state, MAX_SEGMENT_SECONDS:14, SEGMENT_GAP_SECONDS:1.2,
-    resetAudioCache(){resets++;},resyncDub(){resets++;}}, ['endsSentence','buildDubSegments','updateDubSegments']);
+    engineByName: name => ({name, translates: false}),
+    resetAudioCache(){resets++;},resyncDub(){resets++;}}, ['endsSentence','speaksFromSource','buildDubSegments','updateDubSegments']);
   vm.runInContext('updateDubSegments([{start:0,end:2,th:"First",en:"First"},{start:2,end:4,th:"Second",en:"second."}])',c);
   assert.equal(resets,0,'A partial sentence extension must not replay its prefix');
   assert.equal(state.dub.segments[0].text,'First');

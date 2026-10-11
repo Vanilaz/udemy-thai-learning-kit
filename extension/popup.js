@@ -6,6 +6,8 @@ const dualEl = document.getElementById("dual");
 const dubbingEl = document.getElementById("dubbing");
 const ttsEngineEl = document.getElementById("ttsEngine");
 const voiceEl = document.getElementById("voice");
+const dubSourceEl = document.getElementById("dubSource");
+const dubSourceFieldEl = document.getElementById("dubSourceField");
 const dubbingVolumeEl = document.getElementById("dubbingVolume");
 const originalAudioVolumeEl = document.getElementById("originalAudioVolume");
 const audioSettingsEl = document.getElementById("audioSettings");
@@ -24,6 +26,27 @@ const queueFillEl = document.getElementById("queueFill");
 // measure against — the server only reports what is still waiting.
 let queuePeak = 0;
 let knownNativeVoices = [];
+// Set while a queue poll is in flight, so a slow server cannot stack polls.
+let queueBusy = false;
+
+// A message to a dead service worker or a tab without our content script can
+// hang forever; the popup must still settle into a readable state.
+function withTimeout(promise, milliseconds = 4000) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("การเชื่อมต่อใช้เวลานานเกินไป ลองเปิดหน้าต่างนี้ใหม่")), milliseconds);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// The choice only means something for an engine that can translate on its
+// own (Seamless); for every other engine the dub is always the AI's Thai.
+function syncDubSource() {
+  const engine = allEngines().find((e) => e.name === ttsEngineEl.value);
+  dubSourceFieldEl.hidden = !(engine && engine.translates);
+}
 
 function syncAudioControls() {
   audioSettingsEl.hidden = !dubbingEl.checked;
@@ -130,6 +153,8 @@ async function refresh() {
       knownNativeVoices = state.nativeVoices || [];
       fillEngineOptions(state.ttsEngine || "edge");
       fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, state.ttsVoice);
+      if (state.dubSource) dubSourceEl.value = state.dubSource;
+      syncDubSource();
       dubbingVolumeEl.value = String(state.dubbingVolume ?? 1);
       originalAudioVolumeEl.value = String(state.originalAudioVolume ?? 0.15);
       syncAudioControls();
@@ -143,12 +168,12 @@ async function refresh() {
         } else if (state.ttsEngine === "windows") {
           statusEl.textContent = "Windows Natural พร้อมพากย์ไทย";
         } else {
-          const cached = state.audioCached || 0;
+          // "0 ประโยค" read like a failure before playback had even begun;
+          // say what is on, and mention the buffer only while it is working.
           const pending = state.audioPending || 0;
-          const name = engine ? engine.label : state.ttsEngine;
-          statusEl.textContent = pending
-            ? `${name}: พร้อม ${cached} ประโยค · กำลังเตรียม ${pending}`
-            : `${name}: พร้อมเสียง ${cached} ประโยค`;
+          const name = engine ? engine.label.replace(/\s*\(.*\)\s*$/, "") : state.ttsEngine;
+          statusEl.textContent =
+            `พร้อมแล้ว — พากย์ด้วย ${name}` + (pending ? ` · กำลังเตรียมเสียง ${pending} ประโยค` : "");
         }
       }
     }
@@ -215,6 +240,7 @@ async function pushOptions() {
     dubbingEnabled: dubbingEl.checked,
     ttsEngine: ttsEngineEl.value,
     ttsVoice: voiceEl.value,
+    dubSource: dubSourceEl.value,
     dubbingVolume: Number(dubbingVolumeEl.value),
     originalAudioVolume: Number(originalAudioVolumeEl.value),
   };
@@ -230,9 +256,11 @@ dubbingEl.addEventListener("change", pushOptions);
 dubbingEl.addEventListener("change", syncAudioControls);
 ttsEngineEl.addEventListener("change", () => {
   fillVoiceOptions(ttsEngineEl.value, knownNativeVoices, "");
+  syncDubSource();
   pushOptions();
 });
 voiceEl.addEventListener("change", pushOptions);
+dubSourceEl.addEventListener("change", pushOptions);
 dubbingVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
 originalAudioVolumeEl.addEventListener("input", () => { syncAudioControls(); pushOptions(); });
 
@@ -256,10 +284,12 @@ retryEl.addEventListener("click", async () => {
 // The queue page is an extension page, so it opens in a tab of its own rather
 // than in this popup — it is a place to read history, not a control you reach
 // for mid-sentence.
-managerEl.addEventListener("click", () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL("manager.html") });
-  window.close();
-});
+if (managerEl) {
+  managerEl.addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("manager.html") });
+    window.close();
+  });
+}
 
 sectionEl.addEventListener("click", async () => {
   const tab = await activeTab();
@@ -291,37 +321,6 @@ sectionEl.addEventListener("click", async () => {
   }
 });
 
-const popupPages = ["learning", "audio", "usage"];
-function selectPopupPage(selected, focus = false) {
-  for (const page of popupPages) {
-    const tab = document.getElementById(`tab-${page}`);
-    const active = page === selected;
-    tab.setAttribute("aria-selected", String(active));
-    tab.tabIndex = active ? 0 : -1;
-    document.getElementById(`page-${page}`).hidden = !active;
-    if (active && focus) tab.focus();
-  }
-}
-for (const [index, page] of popupPages.entries()) {
-  const tab = document.getElementById(`tab-${page}`);
-  tab.addEventListener("click", () => selectPopupPage(page));
-  tab.addEventListener("keydown", event => {
-    const target = event.key === "ArrowRight" ? (index + 1) % 3
-      : event.key === "ArrowLeft" ? (index + 2) % 3
-      : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
-    if (target < 0) return;
-    event.preventDefault();
-    selectPopupPage(popupPages[target], true);
-  });
-}
-document.getElementById("openAudio").addEventListener("click", () => selectPopupPage("audio", true));
-selectPopupPage("learning");
-fillEngineOptions("edge");
-fillVoiceOptions("edge", [], "");
-syncAudioControls();
-loadSettings().catch(() => {
-  hintEl.textContent = "โหลดค่าที่บันทึกไว้ไม่ได้ ลองเปิดหน้าต่างนี้ใหม่";
-});
 refresh();
 refreshQueue();
 setInterval(refreshQueue, 2000);

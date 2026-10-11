@@ -366,13 +366,22 @@ function pickSourceTrack(tracks) {
   const usable = tracks.filter((t) => t.baseUrl && !/^th/i.test(t.languageCode || ""));
   if (!usable.length) return null;
 
+  // The auto-generated track is YouTube transcribing the audio, so its
+  // language is the language actually spoken. Translating from that language
+  // — rather than from an English subtitle someone added — keeps the dub and
+  // the subtitles one translation away from the instructor, not two.
+  const asr = usable.find((t) => t.kind === "asr");
+  const spoken = asr ? (asr.languageCode || "").split("-")[0].toLowerCase() : "";
+  const inLang = (t, lang) => (t.languageCode || "").toLowerCase().split("-")[0] === lang;
+
   const written = usable.filter((t) => t.kind !== "asr");
   return (
-    // English first when a human wrote it: it is both the most common source
-    // and the one the translator handles best.
-    written.find((t) => /^en/i.test(t.languageCode)) ||
+    // A human-written track in the spoken language is the best source there is.
+    (spoken && written.find((t) => inLang(t, spoken))) ||
+    // Otherwise English written by a human, the translator's strongest pair.
+    written.find((t) => inLang(t, "en")) ||
     written[0] ||
-    usable.find((t) => /^en/i.test(t.languageCode)) ||
+    asr ||
     usable[0]
   );
 }
