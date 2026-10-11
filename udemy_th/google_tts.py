@@ -277,7 +277,7 @@ class GoogleTts:
         renames the file and silently breaks a path that names it directly.
         """
         try:
-            candidates = sorted(folder.glob("*.json"))
+            candidates = [folder / "google-tts-key.json", *sorted(folder.glob("*.json"))]
         except OSError:
             return None
         for path in candidates:
@@ -302,6 +302,8 @@ class GoogleTts:
         """
         for name in ("UDTH_GOOGLE_KEY", "GOOGLE_APPLICATION_CREDENTIALS"):
             value = os.environ.get(name)
+            if not value and Path("D:/secure/google-tts-key.json").is_file():
+                return Path("D:/secure/google-tts-key.json")
             if not value:
                 continue
             path = Path(value)

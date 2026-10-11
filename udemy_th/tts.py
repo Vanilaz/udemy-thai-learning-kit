@@ -25,6 +25,7 @@ from pathlib import Path
 from .edge_tts_engine import EdgeTts
 from .google_tts import GoogleTts, TtsError
 from .omnivoice_tts import OmniVoiceTts
+from .seamless_tts import SeamlessTts
 
 
 class TtsRegistry:
@@ -41,6 +42,7 @@ class TtsRegistry:
         return [
             EdgeTts(cache_dir),
             GoogleTts(cache_dir),
+            SeamlessTts(cache_dir),
             OmniVoiceTts(cache_dir),
         ]
 
