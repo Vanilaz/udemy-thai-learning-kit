@@ -109,6 +109,7 @@ Udemy มีซับไทยสองชนิด ซึ่งคุณภา�
 | **edge** — Microsoft Azure Neural | ไม่จำกัด | `pip install -r requirements.txt` เท่านั้น **(แนะนำ)** |
 | **windows** — เสียงใน Windows | ไม่จำกัด | ไม่ต้องเตรียมอะไร แต่ cache ไม่ได้ |
 | **google** — Chirp 3 HD | 1 ล้านตัวอักษร/เดือน | บัญชี Google Cloud + service account JSON |
+| **seamless** — Meta SeamlessM4T | ไม่จำกัด | GPU + `transformers`, `torch`, `soundfile` (โมเดลพากย์เสียงสไตล์ Facebook Reels) |
 | **omnivoice** — รันในเครื่อง | ไม่จำกัด | GPU + `pip install omnivoice soundfile` |
 
 `edge` กับ `windows` **คือเสียงเดียวกันเป๊ะ** (Niwat / Premwadee = Azure Neural)
