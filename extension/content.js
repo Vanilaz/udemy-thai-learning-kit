@@ -19,6 +19,10 @@
 (() => {
   "use strict";
 
+  // Prevent multiple injections of content script into the same page context
+  if (window.__UDTH_CONTENT_INITIALIZED__) return;
+  window.__UDTH_CONTENT_INITIALIZED__ = true;
+
   // Ceiling on how much a sentence may be sped up to fit its slot. Thai stays
   // followable well past 1.35, and too low a cap is what made the dub fall
   // steadily behind: every overrun pushed the next sentence later still.
@@ -317,7 +321,7 @@
   // The browser's own voices are an engine like any other from here on; every
   // other entry is discovered from the server, so a new server-side engine
   // appears in this picker without the extension changing at all.
-  const BROWSER_ENGINE = {
+  const DEFAULT_BROWSER_ENGINE = {
     name: "windows",
     label: "Windows Natural (ในเบราว์เซอร์)",
     ready: true,
@@ -327,7 +331,7 @@
   const panel = { el: null, button: null, open: false };
 
   function engineCatalogue() {
-    return [BROWSER_ENGINE, ...state.serverEngines];
+    return [DEFAULT_BROWSER_ENGINE, ...state.serverEngines];
   }
 
   // An engine the catalogue does not have is reported as itself-but-unusable,
