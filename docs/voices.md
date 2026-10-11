@@ -12,6 +12,7 @@
 | **windows** | ไม่จำกัด | เท่ากับ edge | ไม่ต้องเตรียมอะไร แต่ cache ไม่ได้ |
 | **google** | 1 ล้านตัวอักษร/เดือน | สูงสุด | บัญชี Google Cloud + service account |
 | **omnivoice** | ไม่จำกัด | ดี + โคลนเสียงได้ | GPU + `pip install omnivoice soundfile` |
+| **seamless** | ไม่จำกัด | Meta SeamlessM4T (สไตล์ Facebook Reels) | GPU + `pip install transformers soundfile sentencepiece` |
 
 ---
 
@@ -54,6 +55,24 @@ Chirp 3 HD รับข้อความได้ครั้งละ ~900 ไ
 โดยไม่ตัดคร่อมสระหรือวรรณยุกต์) ถ้าแบ่งแล้วได้หลายชิ้นจะขอเป็น LINEAR16 แล้วต่อเป็น `.wav`
 ไฟล์เดียว — ไม่ใช่ MP3 เพราะต้องได้ header ที่ตรงกับเสียงจริง ไม่งั้นเบราว์เซอร์อ่าน
 `audio.duration` ผิด แล้วการเร่งเสียงให้พอดีช่วงจะเพี้ยนตาม
+
+## seamless — Meta SeamlessM4T (พากย์เสียงสไตล์ Facebook Reels)
+
+โมเดล [facebook/hf-seamless-m4t-medium](https://huggingface.co/facebook/hf-seamless-m4t-medium) โดย Meta สำหรับการสังเคราะห์เสียง แปล และพากย์หลายภาษา
+
+```cmd
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+python -m pip install transformers soundfile sentencepiece protobuf
+```
+
+- รันบน GPU ในเครื่อง 100% ฟรีไม่จำกัด
+- ปรับเปลี่ยนโมเดลได้ผ่าน Environment Variable เช่น:
+  ```cmd
+  set UDTH_SEAMLESS_MODEL=facebook/seamless-m4t-v2-large
+  ```
+  (แนะนำโมเดล `v2-large` สำหรับการ์ดจอ VRAM 12GB+ เช่น RTX 4080 / 4090)
+
+---
 
 ## omnivoice — รันในเครื่อง โคลนเสียงผู้สอนได้
 

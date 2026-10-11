@@ -13,3 +13,12 @@ anthropic>=0.104.0
 #   google    คุณภาพสูงสุด แต่มีโควต้าและต้องผูกบัญชี Google Cloud
 edge-tts>=7.0.0
 google-cloud-texttospeech>=2.33.0
+
+# สำหรับ Local AI TTS บน GPU (Meta SeamlessM4T v2 / OmniVoice)
+# แนะนำให้ติดตั้ง PyTorch with CUDA ก่อน:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+transformers>=4.40.0
+soundfile>=0.12.1
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+omnivoice>=0.0.1
