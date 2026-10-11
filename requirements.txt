@@ -1,24 +1,16 @@
-# แกนหลักไม่ต้องพึ่ง dependency ใดเลย — ใช้ standard library ล้วน
+# แพ็กเกจหลัก — install.cmd ติดตั้งให้เอง ไม่ต้องรันเอง
+#   (ถ้าจะติดตั้งมือ: python -m pip install -r requirements.txt)
 #
-# ติดตั้งเฉพาะเมื่อจะใช้ `translate --engine claude` (ต้องมี ANTHROPIC_API_KEY):
-#   python -m pip install -r requirements.txt
-#
-# ส่วน `translate --engine agy` ใช้ Antigravity CLI ที่ติดตั้งแยกอยู่แล้ว
-# ไม่ต้องติดตั้งอะไรเพิ่ม
+# ส่วน `translate --engine agy` ใช้ Antigravity CLI ที่ติดตั้งแยก ไม่ต้องลงอะไรเพิ่ม
 
+# ใช้เมื่อ `--engine claude` (ต้องมี ANTHROPIC_API_KEY)
 anthropic>=0.104.0
 
-# เสียงพากย์ไทย — ติดตั้งอย่างใดอย่างหนึ่งก็พอ
-#   edge-tts  ฟรีไม่จำกัด ไม่ต้องมี key   <- แนะนำสำหรับคอร์สยาวๆ
+# เสียงพากย์ไทย
+#   edge-tts  ฟรีไม่จำกัด ไม่ต้องมี key   <- แนะนำ
 #   google    คุณภาพสูงสุด แต่มีโควต้าและต้องผูกบัญชี Google Cloud
 edge-tts>=7.0.0
 google-cloud-texttospeech>=2.33.0
 
-# สำหรับ Local AI TTS บน GPU (Meta SeamlessM4T v2 / OmniVoice)
-# แนะนำให้ติดตั้ง PyTorch with CUDA ก่อน:
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-transformers>=4.40.0
-soundfile>=0.12.1
-sentencepiece>=0.2.0
-protobuf>=4.25.0
-omnivoice>=0.0.1
+# เสียงพากย์ AI บนการ์ดจอ (SeamlessM4T / OmniVoice) แยกไว้ที่ requirements-gpu.txt
+# เพราะต้องติดตั้ง PyTorch รุ่น CUDA ก่อน และต้องล็อกเวอร์ชันให้ตรงกัน

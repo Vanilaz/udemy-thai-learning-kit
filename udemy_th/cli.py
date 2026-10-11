@@ -115,7 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser(
         "serve", help="เปิดเซิร์ฟเวอร์แปลซับสำหรับ Chrome extension"
     )
-    p_serve.add_argument("--engine", choices=("agy", "claude"), default="agy")
+    # No default: start-server.cmd passes nothing, and a machine that only has
+    # ANTHROPIC_API_KEY should still work without editing the launcher.
+    p_serve.add_argument("--engine", choices=("agy", "claude"), default=None)
     p_serve.add_argument("--effort", choices=("low", "medium", "high"), default="high")
     p_serve.add_argument("--port", type=int, default=8765)
 
@@ -375,13 +377,36 @@ def _cmd_docs(args, glossary: Glossary) -> int:
     return 0
 
 
+def _serve_engine(requested: str | None) -> str:
+    """agy when it is installed, else claude when a key is set, else agy."""
+    if requested:
+        return requested
+    import os
+
+    from .translate_agy import AgyNotFound, find_agy
+
+    try:
+        find_agy()
+        return "agy"
+    except AgyNotFound:
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            print("  ไม่พบ agy CLI — ใช้ Claude (ANTHROPIC_API_KEY) แปลแทน", flush=True)
+            return "claude"
+        print(
+            "  ! ไม่พบตัวแปล: ติดตั้ง Antigravity (agy) หรือใส่ ANTHROPIC_API_KEY ในไฟล์ .env\n"
+            "    เซิร์ฟเวอร์ยังเปิดได้ เสียงพากย์ใช้ได้ แต่ยังแปลซับใหม่ไม่ได้",
+            flush=True,
+        )
+        return "agy"
+
+
 def _cmd_serve(args) -> int:
     from .server import serve
 
     serve(
         cache_dir=ROOT / "cache",
         glossary_path=GLOSSARY_PATH,
-        engine=args.engine,
+        engine=_serve_engine(args.engine),
         effort=args.effort,
         port=args.port,
     )

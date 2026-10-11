@@ -89,13 +89,13 @@ Udemy มีซับไทยสองชนิด ซึ่งคุณภา�
 
 ## วิธีใช้หลัก — Chrome Extension
 
-**[📖 คู่มือติดตั้งแบบละเอียด](docs/install-extension.md)**
+**[🚀 คู่มือติดตั้งแบบง่าย (เริ่มที่นี่)](INSTALL.md)** · [คู่มือแบบละเอียด](docs/install-extension.md)
 
 สรุปสั้น ทำครั้งเดียวจบ:
 
-1. เปิด `chrome://extensions` → เปิด **Developer mode** → **Load unpacked** → เลือกโฟลเดอร์ `extension`
-2. ดับเบิลคลิก **`start-server.cmd`** เปิดค้างไว้ระหว่างเรียน
-3. เปิดบทเรียนใน Udemy ได้เลย ไม่ต้องกด CC
+1. ดับเบิลคลิก **`install.cmd`** — ติดตั้ง Python packages ให้ครบเอง
+2. เปิด `chrome://extensions` → เปิด **Developer mode** → **Load unpacked** → เลือกโฟลเดอร์ `extension`
+3. ทุกครั้งที่เรียน: ดับเบิลคลิก **`start-server.cmd`** เปิดค้างไว้ แล้วเปิดบทเรียนได้เลย ไม่ต้องกด CC
 
 ครั้งแรกของแต่ละบทใช้เวลาแปล 30 วินาที - 2 นาที ครั้งต่อไปขึ้นทันทีจาก cache
 

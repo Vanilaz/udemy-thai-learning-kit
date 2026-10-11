@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import threading
 import traceback
@@ -187,7 +188,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self._forbidden():
             return
         path = urlparse(self.path).path
-        if path not in ("/translate", "/tts"):
+        if path not in ("/translate", "/tts", "/tts/warmup"):
             self._send(404, {"error": "not found"})
             return
 
@@ -204,6 +205,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/tts":
             self._handle_tts(payload)
+            return
+
+        if path == "/tts/warmup":
+            engine = str(payload.get("engine") or "")
+            self._send(200, self.tts.warmup(engine) if engine else {"state": "none", "error": ""})
             return
 
         cues = payload.get("cues") or []
@@ -254,7 +260,10 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             # The voice id routes to its engine, so the extension never sends an
             # engine name that could contradict the voice it picked.
-            result = self.tts.synthesize(str(payload.get("text") or ""), voice)
+            # source_lang set means the text is the original, not Thai: only
+            # an engine that can translate (Seamless T2ST) accepts that.
+            source_lang = str(payload.get("source_lang") or "") or None
+            result = self.tts.synthesize(str(payload.get("text") or ""), voice, source_lang)
         except TtsError as exc:
             self._send(400, {"error": str(exc)})
             return
@@ -515,6 +524,24 @@ def _as_float(value) -> float | None:
         return None
 
 
+def _suppress_windows_error_dialogs() -> None:
+    # A broken native dependency (e.g. a torchaudio built for another torch)
+    # otherwise pops a modal "Entry Point Not Found" box that freezes the
+    # server until someone clicks OK. With SEM_FAILCRITICALERRORS the failure
+    # comes back as an ordinary import error and that engine reports itself
+    # unavailable instead.
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        SEM_FAILCRITICALERRORS = 0x0001
+        SEM_NOOPENFILEERRORBOX = 0x8000
+        ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)
+    except Exception:
+        pass
+
+
 def serve(
     cache_dir: Path,
     glossary_path: Path,
@@ -522,6 +549,7 @@ def serve(
     effort: str = "high",
     port: int = PORT,
 ) -> None:
+    _suppress_windows_error_dialogs()
     _Handler.cache_dir = cache_dir
     _Handler.glossary_path = glossary_path
     _Handler.engine = engine
@@ -541,6 +569,9 @@ def serve(
     print("  เปิดหน้าต่างนี้ค้างไว้ระหว่างเรียน แล้วเปิดวิดีโอใน Udemy ได้เลย")
     print("  ปิดด้วย Ctrl+C")
     print("=" * 58, flush=True)
+    # Local voice models load onto the GPU now, not when the first lecture
+    # asks — the server is already answering while this runs.
+    _Handler.tts.preload(os.environ.get("UDTH_PRELOAD", "auto"))
 
     try:
         server.serve_forever()

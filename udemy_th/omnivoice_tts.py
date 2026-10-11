@@ -19,6 +19,7 @@ never select this engine.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import threading
 from pathlib import Path
@@ -33,16 +34,20 @@ SAMPLE_RATE = 24000
 VOICES = {
     "omnivoice:male": "ชาย (เสียงทุ้ม)",
     "omnivoice:female": "หญิง",
-    "omnivoice:male-bright": "ชาย (เสียงสดใส)",
-    "omnivoice:female-calm": "หญิง (เสียงนุ่ม)",
+    "omnivoice:male-bright": "ชาย (วัยหนุ่ม เสียงกลาง)",
+    "omnivoice:female-calm": "หญิง (เสียงทุ้ม นุ่ม)",
     "omnivoice:clone": "โคลนเสียงจากไฟล์ตัวอย่าง",
 }
 
+# Only the model's fixed vocabulary is accepted — anything else (e.g. "bright",
+# "calm") is rejected for every sentence. Allowed: male/female; child,
+# teenager, young adult, middle-aged, elderly; very low … very high pitch;
+# whisper; "<x> accent". Ids are kept stable so saved settings still work.
 _INSTRUCTIONS = {
     "omnivoice:male": "male, low pitch",
     "omnivoice:female": "female",
-    "omnivoice:male-bright": "male, bright, energetic",
-    "omnivoice:female-calm": "female, calm, low pitch",
+    "omnivoice:male-bright": "male, young adult, moderate pitch",
+    "omnivoice:female-calm": "female, middle-aged, low pitch",
 }
 
 
@@ -61,10 +66,15 @@ class OmniVoiceTts:
         self._lock = threading.Lock()
 
     def status(self) -> dict:
-        try:
-            self._imports()
-        except TtsError as exc:
-            return {"configured": False, "error": str(exc), "voices": []}
+        # Cheap on purpose — see SeamlessTts.status: importing omnivoice (and
+        # torch with it) on every /health made a fresh server look unreachable.
+        missing = [m for m in ("omnivoice", "soundfile", "numpy") if importlib.util.find_spec(m) is None]
+        if missing:
+            return {
+                "configured": False,
+                "error": f"ยังไม่ได้ติดตั้ง {', '.join(missing)} — รัน install.cmd --gpu",
+                "voices": [],
+            }
         return {
             "configured": True,
             "ready": True,
@@ -122,6 +132,15 @@ class OmniVoiceTts:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             self._write_wav(audio, output)
             return {"file": filename, "cached": False}
+
+    @property
+    def loaded(self) -> bool:
+        return self._model is not None
+
+    def warm(self) -> None:
+        """Load the model now, so the first dubbed sentence does not wait ~1min."""
+        with self._lock:
+            self._load()
 
     def _load(self):
         if self._model is not None:
