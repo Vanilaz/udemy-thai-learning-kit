@@ -37,6 +37,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .build import _parse_subtitles, _parse_terms, _split_sections
+from . import __version__
 from .env import ENV_PATH, LOADED as ENV_LOADED
 from .glossary import Glossary
 from .models import Lesson, Segment
@@ -247,7 +248,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         if path == "/health":
-            self._send(200, {"ok": True, "engine": self.engine, "voices": self.tts.catalogue()})
+            self._send(200, {"ok": True, "version": __version__, "engine": self.engine, "voices": self.tts.catalogue()})
             return
         if path == "/voices":
             self._send(200, {"engines": self.tts.catalogue()})
@@ -798,7 +799,7 @@ def serve(
             target=_worker, daemon=True, name=f"udth-worker-{index + 1}"
         ).start()
     print("=" * 58)
-    print("  Udemy TH — เซิร์ฟเวอร์แปลซับและเสียงพากย์ พร้อมทำงาน")
+    print(f"  ฮองเรียน v{__version__} — เซิร์ฟเวอร์แปลซับและเสียงพากย์ พร้อมทำงาน")
     print("=" * 58)
     print(f"  ที่อยู่ : http://{HOST}:{port}")
     print(f"  เครื่องมือแปล : {engine} (แปลพร้อมกัน {WORKER_COUNT} บทเรียน)")

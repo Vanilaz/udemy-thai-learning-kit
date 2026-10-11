@@ -201,13 +201,17 @@
         return index === -1 ? sentences.length : index;
       },
 
-      /** Seconds of contiguous final translation from `time` onward. */
+      /**
+       * Seconds of translated runway from `time`: up to the first caption that
+       * is still untranslated. Silence between captions does not end it (the
+       * instructor pausing is not missing text).
+       */
       finalCoverage(time) {
         let until = time;
         for (let i = 0; i < sourceCues.length; i += 1) {
           const cue = sourceCues[i];
-          if (cue.end <= until) continue;
-          if (!cueThai[i] || cue.start > until + 0.5) break;
+          if (cue.end <= time) continue;
+          if (!cueThai[i]) break;
           until = cue.end;
         }
         return Math.max(0, until - time);
