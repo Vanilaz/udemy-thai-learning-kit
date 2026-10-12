@@ -21,7 +21,7 @@
         '<ul class="udth-gate-steps"></ul>' +
         '<div class="udth-gate-detail"></div>' +
         '<div class="udth-gate-bar" hidden><i></i></div>' +
-        '<button type="button" class="udth-gate-skip">ข้ามการรอ แล้วดูไปก่อน</button>' +
+        '<button type="button" class="udth-gate-skip"></button>' +
         "</div>";
       el.querySelector(".udth-gate-skip").addEventListener("click", () => onSkip());
       // A fixed element outside the fullscreen subtree is not painted while
@@ -43,6 +43,7 @@
       show({ title, detail = "", steps = [], progress = null, error = false, skippable = true }) {
         const card = ensure();
         card.classList.toggle("udth-gate-error", error);
+        card.querySelector(".udth-gate-skip").textContent = UDTH.i18n.t("ข้ามการรอ แล้วดูไปก่อน");
         card.querySelector(".udth-gate-title").textContent = title;
         const list = card.querySelector(".udth-gate-steps");
         list.textContent = "";

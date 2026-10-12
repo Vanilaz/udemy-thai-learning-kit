@@ -26,16 +26,18 @@ const queueTitleEl = $("queueTitle");
 const queueDetailEl = $("queueDetail");
 const queueFillEl = $("queueFill");
 
+const t = (text, vars) => UDTH.i18n.t(text, vars);
 const store = UDTH.settings.createSettingsStore({ area: chrome.storage.local, onChanged: chrome.storage.onChanged });
 const api = UDTH.api.createApi((message) => chrome.runtime.sendMessage(message));
-const BROWSER_ENGINE = { name: "windows", label: "Windows (เสียงในเบราว์เซอร์)", ready: true, translates: false, voices: [] };
+const browserEngine = () => ({ name: "windows", label: t("Windows (เสียงในเบราว์เซอร์)"), ready: true, translates: false, voices: [] });
 const VIDEO_PAGE = /https:\/\/(www\.)?(udemy\.com\/course\/|youtube\.com\/(watch|shorts))/;
 
 let engines = [];
+let shownLang = null;
 let queuePeak = 0;
 let queueBusy = false;
 
-const catalogue = () => [BROWSER_ENGINE, ...engines];
+const catalogue = () => [browserEngine(), ...engines.map(UDTH.i18n.localizeEngine)];
 const engineByName = (name) => catalogue().find((e) => e.name === name);
 
 function browserVoices() {
@@ -56,6 +58,29 @@ function fill(select, options, selected) {
   select.value = options.some((o) => o.value === selected) ? selected : options.length ? options[0].value : "";
 }
 
+// Static text is marked in popup.html; its Thai source is kept on the element
+// so switching back and forth always starts from the original.
+function localize() {
+  const source = (el, read) => (el.dataset.i18nSrc = el.dataset.i18nSrc || read(el));
+  for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(source(el, (e) => e.textContent.trim()));
+  for (const el of document.querySelectorAll("[data-i18n-html]")) el.innerHTML = t(source(el, (e) => e.innerHTML.trim()));
+  for (const el of document.querySelectorAll("[data-i18n-aria]")) {
+    el.setAttribute("aria-label", t(source(el, (e) => e.getAttribute("aria-label"))));
+  }
+  for (const button of document.querySelectorAll("[data-lang]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.lang === UDTH.i18n.lang()));
+  }
+}
+
+/** Apply the chosen language; true when the words on screen changed. */
+function applyLang(settings) {
+  const lang = UDTH.i18n.setLang(settings.lang);
+  if (lang === shownLang) return false;
+  shownLang = lang;
+  localize();
+  return true;
+}
+
 function render(settings) {
   const dub = settings.dub;
   enabledEl.checked = settings.subtitles !== "off";
@@ -64,13 +89,15 @@ function render(settings) {
   dubbingEl.checked = dub.on;
   audioSettingsEl.hidden = !dub.on;
 
-  const engineOptions = catalogue().map((e) => ({ value: e.name, label: e.ready ? e.label : `${e.label} (ยังไม่พร้อม)` }));
-  if (!engineByName(dub.engine)) engineOptions.push({ value: dub.engine, label: `${dub.engine} (ยังไม่พร้อม)` });
+  const engineOptions = catalogue().map((e) => ({ value: e.name, label: e.ready ? e.label : t("{engine} (ยังไม่พร้อม)", { engine: e.label }) }));
+  if (!engineByName(dub.engine)) {
+    engineOptions.push({ value: dub.engine, label: t("{engine} (ยังไม่พร้อม)", { engine: dub.engine }) });
+  }
   fill(ttsEngineEl, engineOptions, dub.engine);
 
   const engine = engineByName(dub.engine);
   const voices = dub.engine === "windows" ? browserVoices() : (engine && engine.voices) || [];
-  fill(voiceEl, voices.length ? voices.map((v) => ({ value: v.id, label: v.label })) : [{ value: "", label: "เลือกอัตโนมัติ" }], dub.voice);
+  fill(voiceEl, voices.length ? voices.map((v) => ({ value: v.id, label: v.label })) : [{ value: "", label: t("เลือกอัตโนมัติ") }], dub.voice);
 
   startFieldEl.hidden = !(engine && engine.translates);
   for (const button of startFieldEl.querySelectorAll("[data-start]")) {
@@ -78,8 +105,8 @@ function render(settings) {
   }
   startHintEl.textContent =
     dub.start === "instant"
-      ? "เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ"
-      : "รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ ศัพท์เทคนิคแม่นที่สุด";
+      ? t("เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ")
+      : t("รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ แม่นที่สุด");
 
   dubbingVolumeEl.value = String(dub.volume);
   dubbingValueEl.value = `${Math.round(dub.volume * 100)}%`;
@@ -98,17 +125,23 @@ async function refreshServer() {
     const health = await api.health();
     engines = health.engines;
     if (health.version && health.version !== mine) {
-      setStatus(`เซิร์ฟเวอร์เป็นเวอร์ชัน ${health.version} ส่วนขยายเป็น ${mine} ปิดแล้วเปิด start-server.cmd ใหม่`, false);
+      setStatus(
+        t("เซิร์ฟเวอร์เป็นเวอร์ชัน {server} แต่ส่วนขยายเป็น {mine} ปิดแล้วเปิด start-server.cmd ใหม่", {
+          server: health.version,
+          mine,
+        }),
+        false
+      );
     } else if (!health.version) {
-      setStatus("เซิร์ฟเวอร์เป็นเวอร์ชันเก่า ปิดแล้วเปิด start-server.cmd ใหม่", false);
+      setStatus(t("เซิร์ฟเวอร์เป็นเวอร์ชันเก่า ปิดแล้วเปิด start-server.cmd ใหม่"), false);
     } else {
-      setStatus("เซิร์ฟเวอร์พร้อมทำงาน", true);
+      setStatus(t("เซิร์ฟเวอร์พร้อมทำงาน"), true);
     }
-    hintEl.textContent = "เปิดวิดีโอใน Udemy หรือ YouTube ได้เลย ครั้งแรกของแต่ละบทจะใช้เวลาแปลสักครู่";
+    hintEl.textContent = t("เปิดวิดีโอใน Udemy หรือ YouTube ได้เลย ครั้งแรกของแต่ละบทจะใช้เวลาแปลสักครู่");
   } catch (error) {
     engines = [];
     setStatus(error.message, false);
-    hintEl.innerHTML = "ดับเบิลคลิก <code>start-server.cmd</code> ในโฟลเดอร์โปรเจกต์ แล้วเปิดหน้านี้ใหม่";
+    hintEl.innerHTML = t("ดับเบิลคลิก <code>start-server.cmd</code> ในโฟลเดอร์โปรเจกต์ แล้วเปิดหน้านี้ใหม่");
   }
 }
 
@@ -123,15 +156,20 @@ async function refreshLecture() {
   try {
     state = await chrome.tabs.sendMessage(tab.id, { type: "getState" });
   } catch {
-    hintEl.textContent = "หน้าวิดีโอนี้ยังไม่มีส่วนขยายทำงาน กด F5 รีเฟรชหน้าวิดีโอหนึ่งครั้ง";
+    hintEl.textContent = t("หน้าวิดีโอนี้ยังไม่มีส่วนขยายทำงาน กด F5 รีเฟรชหน้าวิดีโอหนึ่งครั้ง");
     return;
   }
   if (!state || !engines.length) return;
-  const lang = state.sourceLang ? `${state.sourceLang.split("-")[0]} → ไทย` : "";
+  const lang = state.sourceLang ? t("{lang} → ไทย", { lang: state.sourceLang.split("-")[0].toUpperCase() }) : "";
   if (state.phase === "playing") {
-    setStatus(state.translating ? `กำลังเล่น ${lang} · ส่วนที่เหลือกำลังแปล` : `กำลังเล่น ${lang} · แปลครบแล้ว`, true);
+    setStatus(
+      state.translating
+        ? t("กำลังเล่น {lang} · ส่วนที่เหลือกำลังแปล", { lang })
+        : t("กำลังเล่น {lang} · แปลครบแล้ว", { lang }),
+      true
+    );
   } else if (state.phase === "waiting") {
-    setStatus(`กำลังเตรียมบทนี้ ${lang}`, true);
+    setStatus(t("กำลังเตรียมบทนี้ {lang}", { lang }), true);
   } else if (state.phase === "error") {
     setStatus(state.message, false);
   }
@@ -167,7 +205,9 @@ async function refreshQueue() {
       return;
     }
     queueEl.style.display = "";
-    queueTitleEl.textContent = info.failed ? `แปลล่วงหน้าเสร็จ พลาด ${info.failed} บทเรียน` : "แปลล่วงหน้าเสร็จแล้ว";
+    queueTitleEl.textContent = info.failed
+      ? t("แปลล่วงหน้าเสร็จ พลาด {failed} บทเรียน", { failed: info.failed })
+      : t("แปลล่วงหน้าเสร็จแล้ว");
     queueDetailEl.textContent = "";
     queueFillEl.style.width = "100%";
     return;
@@ -175,7 +215,7 @@ async function refreshQueue() {
   queuePeak = Math.max(queuePeak, left);
   const done = queuePeak - left;
   queueEl.style.display = "";
-  queueTitleEl.textContent = `กำลังแปลล่วงหน้า ${done}/${queuePeak} บทเรียน`;
+  queueTitleEl.textContent = t("กำลังแปลล่วงหน้า {done}/{total} บทเรียน", { done, total: queuePeak });
   queueDetailEl.textContent = info.running ? info.running.title : "";
   queueFillEl.style.width = `${(done / queuePeak) * 100}%`;
 }
@@ -195,6 +235,9 @@ originalAudioVolumeEl.addEventListener("input", () =>
 );
 for (const button of startFieldEl.querySelectorAll("[data-start]")) {
   button.addEventListener("click", () => store.save({ dub: { start: button.dataset.start } }));
+}
+for (const button of document.querySelectorAll("[data-lang]")) {
+  button.addEventListener("click", () => store.save({ lang: button.dataset.lang }));
 }
 
 retryEl.addEventListener("click", async () => {
@@ -216,19 +259,19 @@ sectionEl.addEventListener("click", async () => {
   if (!tab) return;
   sectionEl.disabled = true;
   const original = sectionEl.lastChild.textContent;
-  sectionEl.lastChild.textContent = "กำลังเตรียมคิว ...";
+  sectionEl.lastChild.textContent = t("กำลังเตรียมคิว ...");
   try {
     // The page answers immediately and keeps gathering in the background, so
     // closing this popup does not cancel anything.
     const res = await chrome.tabs.sendMessage(tab.id, { type: "translateSection" });
     if (res && res.ok) {
-      sectionEl.lastChild.textContent = "ส่งเข้าคิวแล้ว";
-      hintEl.textContent = "ดูความคืบหน้าได้ที่มุมซ้ายล่างของหน้า Udemy เปลี่ยนบทเรียนระหว่างนี้ได้";
+      sectionEl.lastChild.textContent = t("ส่งเข้าคิวแล้ว");
+      hintEl.textContent = t("ดูความคืบหน้าได้ที่มุมซ้ายล่างของหน้า Udemy เปลี่ยนบทเรียนระหว่างนี้ได้");
       return;
     }
-    setStatus((res && res.error) || "สั่งแปลทั้ง Section ไม่สำเร็จ", false);
+    setStatus((res && res.error) || t("สั่งแปลทั้ง Section ไม่สำเร็จ"), false);
   } catch {
-    setStatus("หน้านี้ยังไม่พร้อม กด F5 รีเฟรชหน้า Udemy หนึ่งครั้ง", false);
+    setStatus(t("หน้านี้ยังไม่พร้อม กด F5 รีเฟรชหน้า Udemy หนึ่งครั้ง"), false);
   }
   sectionEl.disabled = false;
   sectionEl.lastChild.textContent = original;
@@ -238,8 +281,14 @@ sectionEl.addEventListener("click", async () => {
 
 document.querySelector(".version").textContent = `v${chrome.runtime.getManifest().version}`;
 speechSynthesis.addEventListener("voiceschanged", () => store.get() && render(store.get()));
-store.subscribe(render);
+store.subscribe((settings) => {
+  const relabelled = applyLang(settings);
+  render(settings);
+  // Messages already on screen were written in the old language.
+  if (relabelled) refreshServer().then(() => refreshLecture());
+});
 store.load().then(async (settings) => {
+  applyLang(settings);
   render(settings);
   await refreshServer();
   render(store.get());

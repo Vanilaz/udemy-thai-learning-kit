@@ -8,9 +8,10 @@
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
 
   function createUdemyPages(ctx) {
+    const t = (text, vars) => UDTH.i18n.t(text, vars);
     const {
       state, log, sleep, showGate, hideGate, requestTranslation, assertCurrent,
-      describeTranslateError, takeForceFlag, getJson, SKIP_TEXT, Stale,
+      describeTranslateError, takeForceFlag, getJson, skipText, Stale,
     } = ctx;
     const { courseSlug, lectureId, getCourseId, fetchLectureAsset, videoCues, articleCues,
       quizId } = UDTH.udemy;
@@ -84,7 +85,7 @@
     if (!blocks.length) return;
 
     state.status = "translating";
-    showGate(`กำลังแปลคำสั่ง Assignment ${blocks.length} บรรทัดเป็นไทย ...`);
+    showGate(t("กำลังแปลคำสั่ง Assignment {count} บรรทัดเป็นไทย ...", { count: blocks.length }));
 
     const payload = {
       course: courseSlug(),
@@ -101,7 +102,7 @@
         generation,
         (done, total) => {
           const suffix = total ? ` (${done}/${total})` : "";
-          showGate(`กำลังแปลคำสั่ง Assignment ...${suffix}`);
+          showGate(t("กำลังแปลคำสั่ง Assignment ...{progress}", { progress: suffix }));
         }
       );
     } catch (err) {
@@ -220,7 +221,7 @@
     log("แบบทดสอบ", assessments.length, "ข้อ /", strings.length, "ข้อความ");
 
     const banner = ensureQuizBanner();
-    setQuizBanner(banner, `กำลังแปลแบบทดสอบ ${assessments.length} ข้อเป็นไทย ...`);
+    setQuizBanner(banner, t("กำลังแปลแบบทดสอบ {count} ข้อเป็นไทย ...", { count: assessments.length }));
     state.status = "translating";
 
     const force = await takeForceFlag(id);
@@ -239,7 +240,7 @@
         generation,
         (done, total) => {
           const suffix = total ? ` (${done}/${total})` : "";
-          setQuizBanner(banner, `กำลังแปลแบบทดสอบ ...${suffix}`);
+          setQuizBanner(banner, t("กำลังแปลแบบทดสอบ ...{progress}", { progress: suffix }));
         }
       );
     } catch (err) {
@@ -259,7 +260,7 @@
     state.status = "ready";
     setQuizBanner(
       banner,
-      `แปลแล้ว ${state.quizMap.size} ข้อความ — คำแปลไทยจะขึ้นใต้ข้อความอังกฤษ`,
+      t("แปลแล้ว {count} ข้อความ — คำแปลไทยจะขึ้นใต้ข้อความอังกฤษ", { count: state.quizMap.size }),
       "ok"
     );
     watchQuizDom();
@@ -364,14 +365,14 @@
     }
     const built = articleCues(asset);
     if (!built.ok) {
-      log(SKIP_TEXT[built.code] || built.code);
+      log(skipText(built.code) || built.code);
       return;
     }
     const { holder, blocks, cues } = built;
 
     state.status = "translating";
     const panel = ensureDocPanel(container);
-    setDocStatus(panel, `กำลังแปลเอกสาร ${blocks.length} ย่อหน้าเป็นไทย ...`);
+    setDocStatus(panel, t("กำลังแปลเอกสาร {count} ย่อหน้าเป็นไทย ...", { count: blocks.length }));
 
     const force = await takeForceFlag(lectureId());
 
@@ -389,7 +390,7 @@
         generation,
         (done, total) => {
           const suffix = total ? ` (${done}/${total})` : "";
-          setDocStatus(panel, `กำลังแปลเอกสาร ...${suffix}`);
+          setDocStatus(panel, t("กำลังแปลเอกสาร ...{progress}", { progress: suffix }));
         }
       );
     } catch (err) {
@@ -420,8 +421,8 @@
     panel.className = "udth-doc";
     panel.innerHTML =
       '<div class="udth-doc-bar">' +
-      '<span class="udth-doc-title">ฉบับแปลไทย</span>' +
-      '<button type="button" class="udth-doc-toggle">ดูต้นฉบับอังกฤษ</button>' +
+      `<span class="udth-doc-title">${t("ฉบับแปลไทย")}</span>` +
+      `<button type="button" class="udth-doc-toggle">${t("ดูต้นฉบับอังกฤษ")}</button>` +
       "</div>" +
       '<div class="udth-doc-body"></div>';
     container.parentElement.insertBefore(panel, container);
@@ -442,14 +443,14 @@
     body.innerHTML = "";
     body.appendChild(holder);
 
-    panel.querySelector(".udth-doc-title").textContent = `ฉบับแปลไทย (${count} ย่อหน้า)`;
+    panel.querySelector(".udth-doc-title").textContent = t("ฉบับแปลไทย ({count} ย่อหน้า)", { count });
 
     const toggle = panel.querySelector(".udth-doc-toggle");
     original.style.display = "none"; // Thai first — that is the whole point
     toggle.onclick = () => {
       const showingOriginal = original.style.display !== "none";
       original.style.display = showingOriginal ? "none" : "";
-      toggle.textContent = showingOriginal ? "ดูต้นฉบับอังกฤษ" : "ซ่อนต้นฉบับอังกฤษ";
+      toggle.textContent = showingOriginal ? t("ดูต้นฉบับอังกฤษ") : t("ซ่อนต้นฉบับอังกฤษ");
     };
   }
 
@@ -541,21 +542,21 @@
 
   async function translateSection() {
     if (state.batch.preparing) {
-      return { ok: false, error: "กำลังเตรียมคิวอยู่แล้ว" };
+      return { ok: false, error: t("กำลังเตรียมคิวอยู่แล้ว") };
     }
 
     const here = lectureId() || quizId();
     if (!here) {
-      return { ok: false, error: "เปิดบทเรียนสักบทก่อน แล้วค่อยสั่งแปลทั้ง Section" };
+      return { ok: false, error: t("เปิดบทเรียนสักบทก่อน แล้วค่อยสั่งแปลทั้ง Section") };
     }
 
     state.batch.preparing = true;
-    showBatch("กำลังอ่านรายการบทเรียนใน Section ...", "");
+    showBatch(t("กำลังอ่านรายการบทเรียนใน Section ..."), "");
     try {
       const courseId = await getCourseId();
       const items = await fetchCurriculum(courseId);
       const section = sectionContaining(items, here);
-      if (!section) throw new Error("หา Section ของบทเรียนนี้ไม่เจอ");
+      if (!section) throw new Error(t("หา Section ของบทเรียนนี้ไม่เจอ"));
 
       const targets = section.items.filter(
         (i) =>
@@ -566,7 +567,7 @@
       log("แปลทั้ง Section", label, targets.length, "บทเรียน");
 
       if (!targets.length) {
-        showBatch("Section นี้ไม่มีวิดีโอหรือบทความให้แปล", "ok", label);
+        showBatch(t("Section นี้ไม่มีวิดีโอหรือบทความให้แปล"), "ok", label);
         setTimeout(hideBatch, 8000);
         return { ok: true, queued: 0, cached: 0, skipped: 0, section: label };
       }
@@ -581,7 +582,7 @@
 
       for (let n = 0; n < targets.length; n += 1) {
         showBatch(
-          `กำลังเตรียม ${n + 1}/${targets.length} บทเรียน`,
+          t("กำลังเตรียม {done}/{total} บทเรียน", { done: n + 1, total: targets.length }),
           "",
           label,
           n / targets.length
@@ -612,7 +613,7 @@
         startQueueWatch();
       } else {
         showBatch(
-          cached ? `Section นี้แปลไว้หมดแล้ว (${cached} บทเรียน)` : "ไม่มีบทเรียนที่แปลได้",
+          cached ? t("Section นี้แปลไว้หมดแล้ว ({count} บทเรียน)", { count: cached }) : t("ไม่มีบทเรียนที่แปลได้"),
           "ok",
           label
         );
@@ -642,7 +643,7 @@
     badge.innerHTML =
       '<div class="udth-batch-head">' +
       '<span class="udth-batch-title"></span>' +
-      '<button type="button" class="udth-batch-close" aria-label="ปิดกล่องสถานะ">&times;</button>' +
+      '<button type="button" class="udth-batch-close" aria-label="' + t("ปิดกล่องสถานะ") + '">&times;</button>' +
       "</div>" +
       '<div class="udth-batch-detail"></div>' +
       '<div class="udth-batch-track"><div class="udth-batch-fill"></div></div>';
@@ -711,8 +712,8 @@
         stopQueueWatch();
         showBatch(
           info.failed
-            ? `แปลล่วงหน้าเสร็จ — พลาด ${info.failed} บทเรียน`
-            : "แปลล่วงหน้าเสร็จแล้ว เปิดบทถัดไปได้เลย",
+            ? t("แปลล่วงหน้าเสร็จ — พลาด {failed} บทเรียน", { failed: info.failed })
+            : t("แปลล่วงหน้าเสร็จแล้ว เปิดบทถัดไปได้เลย"),
           info.failed ? "error" : "ok",
           state.batch.label
         );
@@ -724,7 +725,7 @@
       const done = Math.max(0, total - left);
       const now = info.running ? info.running.title : "";
       showBatch(
-        `กำลังแปลล่วงหน้า ${done}/${total} บทเรียน`,
+        t("กำลังแปลล่วงหน้า {done}/{total} บทเรียน", { done, total }),
         "",
         now || state.batch.label,
         total ? done / total : null

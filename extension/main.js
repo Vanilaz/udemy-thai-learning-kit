@@ -19,6 +19,7 @@
   // content scripts were injected twice (seen once, not yet explained).
   log(`ส่วนขยายเริ่มทำงาน v${chrome.runtime.getManifest().version}`, Math.random().toString(36).slice(2, 7));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const t = (text, vars) => UDTH.i18n.t(text, vars);
   // Diagnostic trace, off by default. Turn on from the page's console with
   // localStorage.setItem("udth-debug", "1") (content scripts share the page's storage).
   // The last 40 entries are also kept on <html data-udth-trace>, readable from
@@ -41,7 +42,9 @@
   const api = UDTH.api.createApi((message) => chrome.runtime.sendMessage(message));
 
   const MAX_RETRIES = 3;
-  const SKIP_TEXT = {
+  // Why a page cannot be translated, by the code the site reports. Read
+  // through t() when shown, so it follows the interface language.
+  const SKIP_REASONS = {
     "native-thai": "บทนี้มีซับไทยที่คนแปลไว้แล้ว กด CC แล้วเลือกภาษาไทย จะดีกว่าให้ AI แปล",
     "no-english": "บทนี้ไม่มีคำบรรยายต้นฉบับให้แปล",
     "no-captions": "วิดีโอนี้ไม่มีคำบรรยายเลย จึงแปลไม่ได้",
@@ -52,6 +55,7 @@
     "empty-article": "บทความนี้ไม่มีเนื้อหาให้แปล",
     "code-only": "บทความนี้มีแต่โค้ด ไม่มีข้อความให้แปล",
   };
+  const skipText = (code) => (code in SKIP_REASONS ? t(SKIP_REASONS[code]) : "");
 
   // ------------------------------------------------------------ server state
 
@@ -69,9 +73,12 @@
       // that looked exactly like a bug in this version. Name it instead.
       const mine = chrome.runtime.getManifest().version;
       if (serverVersion && serverVersion !== mine) {
-        serverIssue = `เซิร์ฟเวอร์เป็นเวอร์ชัน ${serverVersion} แต่ส่วนขยายเป็น ${mine} ปิดแล้วเปิด start-server.cmd ใหม่`;
+        serverIssue = t("เซิร์ฟเวอร์เป็นเวอร์ชัน {server} แต่ส่วนขยายเป็น {mine} ปิดแล้วเปิด start-server.cmd ใหม่", {
+          server: serverVersion,
+          mine,
+        });
       } else if (!serverVersion) {
-        serverIssue = "เซิร์ฟเวอร์เป็นเวอร์ชันเก่า ปิดแล้วเปิด start-server.cmd ใหม่";
+        serverIssue = t("เซิร์ฟเวอร์เป็นเวอร์ชันเก่า ปิดแล้วเปิด start-server.cmd ใหม่");
       }
     } catch (error) {
       engines = [];
@@ -160,7 +167,7 @@
         api,
         log,
         sleep,
-        SKIP_TEXT,
+        skipText,
         Stale: UDTH.api.Stale,
         getJson: UDTH.util.getJson,
         takeForceFlag,
@@ -181,27 +188,30 @@
   function waitingView(waitingFor) {
     const steps = [];
     let progress = null;
-    const t = waitingFor.translation;
-    if (t) {
+    const tr = waitingFor.translation;
+    if (tr) {
+      const counts = { ready: tr.readySeconds, needed: tr.neededSeconds, done: tr.done, total: tr.total };
       steps.push(
-        t.total
-          ? `แปลซับ: พร้อมแล้ว ${t.readySeconds}/${t.neededSeconds} วินาที (ท่อน ${t.done}/${t.total})`
-          : `แปลซับ: พร้อมแล้ว ${t.readySeconds}/${t.neededSeconds} วินาที`
+        tr.total
+          ? t("แปลซับ: พร้อมแล้ว {ready}/{needed} วินาที (ท่อน {done}/{total})", counts)
+          : t("แปลซับ: พร้อมแล้ว {ready}/{needed} วินาที", counts)
       );
-      progress = Math.min(1, t.readySeconds / t.neededSeconds);
+      progress = Math.min(1, tr.readySeconds / tr.neededSeconds);
     }
     if (waitingFor.voice) {
       const engine = engines.find((e) => e.name === waitingFor.voice.engine);
-      steps.push(`โหลดเสียงพากย์ ${engine ? engine.label : waitingFor.voice.engine} ขึ้นการ์ดจอ`);
+      steps.push(t("โหลดเสียงพากย์ {engine} ขึ้นการ์ดจอ", { engine: engine ? t(engine.label) : waitingFor.voice.engine }));
     }
-    const title = t && t.seeked
-      ? "กำลังแปลช่วงที่คุณกรอไป ..."
-      : t && waitingFor.voice ? "กำลังเตรียมซับและเสียงพากย์ ..." : t ? "กำลังแปลเป็นไทย ..." : "กำลังโหลดเสียงพากย์ ...";
-    const detail = t && t.seeked
-      ? "AI กำลังแปลช่วงนี้ก่อนส่วนอื่น วิดีโอจะเล่นต่อเองเมื่อพร้อม หรือกดดูต่อโดยไม่รอได้"
-      : t
-      ? "วิดีโอจะเล่นต่อเองเมื่อแปลล่วงหน้าพอ ที่เหลือแปลต่อเบื้องหลัง"
-      : "ครั้งแรกหลังเปิดเซิร์ฟเวอร์ใช้เวลาราว 15-60 วินาที วิดีโอจะเล่นต่อเองเมื่อพร้อม";
+    const title = tr && tr.seeked
+      ? t("กำลังแปลช่วงที่คุณกรอไป ...")
+      : tr && waitingFor.voice
+      ? t("กำลังเตรียมซับและเสียงพากย์ ...")
+      : tr ? t("กำลังแปลเป็นไทย ...") : t("กำลังโหลดเสียงพากย์ ...");
+    const detail = tr && tr.seeked
+      ? t("AI กำลังแปลช่วงนี้ก่อนส่วนอื่น วิดีโอจะเล่นต่อเองเมื่อพร้อม หรือกดดูต่อโดยไม่รอได้")
+      : tr
+      ? t("วิดีโอจะเล่นต่อเองเมื่อแปลล่วงหน้าพอ ที่เหลือแปลต่อเบื้องหลัง")
+      : t("ครั้งแรกหลังเปิดเซิร์ฟเวอร์ใช้เวลาราว 15-60 วินาที วิดีโอจะเล่นต่อเองเมื่อพร้อม");
     return { title, steps, detail, progress };
   }
 
@@ -214,16 +224,16 @@
       gate.hide();
     }
     if (page.overlay) {
-      if (state.phase === "loading") page.overlay.status("กำลังตรวจคำบรรยายของบทนี้ ...");
+      if (state.phase === "loading") page.overlay.status(t("กำลังตรวจคำบรรยายของบทนี้ ..."));
       else if (state.phase === "unavailable") {
-        page.overlay.status(SKIP_TEXT[state.reason] || "แปลบทนี้ไม่ได้", state.reason === "native-thai" ? "ok" : "error");
+        page.overlay.status(skipText(state.reason) || t("แปลบทนี้ไม่ได้"), state.reason === "native-thai" ? "ok" : "error");
       } else if (state.phase === "error") page.overlay.status(state.message, "error");
       else if (state.phase === "playing") {
         if (state.notice) page.overlay.status(state.notice, "error");
         else if (!page.announcedReady) {
           page.announcedReady = true;
           page.overlay.status(
-            state.translating ? "เริ่มดูได้เลย ส่วนที่เหลือกำลังแปลอยู่เบื้องหลัง" : "พร้อมแล้ว ซับไทยครบทั้งบท",
+            state.translating ? t("เริ่มดูได้เลย ส่วนที่เหลือกำลังแปลอยู่เบื้องหลัง") : t("พร้อมแล้ว ซับไทยครบทั้งบท"),
             "ok"
           );
         }
@@ -345,12 +355,12 @@
         // server, say) must not flash an error forever.
         if (failures <= MAX_RETRIES) {
           const delay = 4000 * failures;
-          if (page.overlay) page.overlay.status(`${message} ลองใหม่ใน ${delay / 1000} วินาที`, "error");
+          if (page.overlay) page.overlay.status(t("{message} ลองใหม่ใน {seconds} วินาที", { message, seconds: delay / 1000 }), "error");
           setTimeout(() => {
             if (page.key === key) page.key = null;
           }, delay);
         } else if (page.overlay) {
-          page.overlay.status(`${message} หยุดลองแล้ว กด F5 เพื่อเริ่มใหม่`, "error");
+          page.overlay.status(t("{message} หยุดลองแล้ว กด F5 เพื่อเริ่มใหม่", { message }), "error");
         }
       }
     };
@@ -369,11 +379,11 @@
       // Answer now and keep working: gathering a section takes tens of
       // seconds and the popup usually closes long before then.
       if (!pages || !site.supportsSection) {
-        sendResponse({ ok: false, error: "แปลล่วงหน้าทั้ง Section ใช้ได้เฉพาะบน Udemy" });
+        sendResponse({ ok: false, error: t("แปลล่วงหน้าทั้ง Section ใช้ได้เฉพาะบน Udemy") });
         return false;
       }
       if (pagesState.batch.preparing) {
-        sendResponse({ ok: false, error: "กำลังเตรียมคิวอยู่แล้ว" });
+        sendResponse({ ok: false, error: t("กำลังเตรียมคิวอยู่แล้ว") });
         return false;
       }
       pages.translateSection().catch((err) => log("แปลทั้ง Section ล้มเหลว", err));
@@ -384,7 +394,10 @@
   });
 
   store.load().then(() => {
-    store.subscribe(() => {
+    UDTH.i18n.setLang(store.get().lang);
+    store.subscribe((next) => {
+      const lang = UDTH.i18n.lang();
+      if (UDTH.i18n.setLang(next.lang) !== lang && page.state.phase === "waiting") onSessionState(page.state);
       if (page.menu) page.menu.render();
       if (page.overlay && page.state.phase === "playing") {
         page.overlay.hideNative(store.get().subtitles !== "off");

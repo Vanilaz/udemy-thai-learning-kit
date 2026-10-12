@@ -74,7 +74,7 @@ UDTH.findControlBar = function findControlBar(video) {
 UDTH.util = {
   async getJson(url) {
     const response = await fetch(url, { credentials: "include" });
-    if (!response.ok) throw new Error(`เซิร์ฟเวอร์ตอบ ${response.status}`);
+    if (!response.ok) throw new Error(UDTH.i18n.t("เซิร์ฟเวอร์ตอบ {status}", { status: response.status }));
     return response.json();
   },
 
@@ -236,7 +236,7 @@ function youtubeVideoId() {
 // code in the page's own world. It always describes the video actually loaded.
 async function tracksFromPlayer() {
   const res = await chrome.runtime.sendMessage({ type: "youtubeCaptions" });
-  if (!res || !res.ok) throw new Error((res && res.error) || "อ่านรายการคำบรรยายไม่ได้");
+  if (!res || !res.ok) throw new Error((res && res.error) || UDTH.i18n.t("อ่านรายการคำบรรยายไม่ได้"));
   return res.tracks || [];
 }
 
@@ -247,7 +247,7 @@ async function tracksFromHtml(videoId) {
   const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
     credentials: "include",
   });
-  if (!response.ok) throw new Error(`YouTube ตอบ ${response.status}`);
+  if (!response.ok) throw new Error(UDTH.i18n.t("YouTube ตอบ {status}", { status: response.status }));
   const html = await response.text();
 
   const player = UDTH.util.extractJson(html, "ytInitialPlayerResponse");

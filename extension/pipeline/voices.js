@@ -3,6 +3,7 @@
 "use strict";
 (() => {
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
+  const { t } = UDTH.i18n || require("../core/i18n.js");
 
   const MAX_CLIPS = 40; // decoded clips kept; older blob URLs are revoked
   const THAI_CHARS_PER_SECOND = 12; // browser voices give no duration up front
@@ -67,7 +68,7 @@
           if (element.readyState >= 1) applyRate();
           else element.addEventListener("loadedmetadata", applyRate, { once: true });
           element.onended = () => resolve();
-          element.onerror = () => reject(new Error("เล่นไฟล์เสียงไม่ได้"));
+          element.onerror = () => reject(new Error(t("เล่นไฟล์เสียงไม่ได้")));
           return element.play();
         }).catch(reject);
       });

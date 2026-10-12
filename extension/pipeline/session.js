@@ -14,6 +14,7 @@
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
   const { createTimeline } = UDTH.timeline || require("../core/timeline.js");
   const { createDubber } = UDTH.dubber || require("./dubber.js");
+  const { t } = UDTH.i18n || require("../core/i18n.js");
 
   // How much translated runway is enough to hand the player back. Chunks land
   // out of order, so what matters is whether the stretch the viewer is about
@@ -151,7 +152,7 @@
       };
       const apply = (reply) => {
         voiceLoading = reply.state === "loading" || reply.state === "idle";
-        if (reply.state === "error") notice = `โหลดเสียง ${d.engine} ไม่สำเร็จ: ${reply.error || ""}`.trim();
+        if (reply.state === "error") notice = t("โหลดเสียง {engine} ไม่สำเร็จ: {reason}", { engine: d.engine, reason: reply.error || "" }).trim();
       };
       const first = ask().then((reply) => {
         if (!disposed && mine === voiceToken) apply(reply);
@@ -193,7 +194,7 @@
         voice,
         settings: dub,
         onIssue: (error) => {
-          notice = `พากย์เสียงไม่ได้: ${String((error && error.message) || error).slice(0, 100)}`;
+          notice = t("พากย์เสียงไม่ได้: {reason}", { reason: String((error && error.message) || error).slice(0, 100) });
           publish();
         },
         debug,

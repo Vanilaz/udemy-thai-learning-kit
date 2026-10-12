@@ -48,7 +48,7 @@
 
   async function getCourseId() {
     const slug = courseSlug();
-    if (!slug) throw new Error("อ่านรหัสคอร์สจาก URL ไม่ได้");
+    if (!slug) throw new Error(UDTH.i18n.t("อ่านรหัสคอร์สจาก URL ไม่ได้"));
     if (courseIdCache.slug === slug && courseIdCache.id) return courseIdCache.id;
 
     // `locale` is the language the course is taught in ({"locale": "es_ES"}),
@@ -56,7 +56,7 @@
     // instructor's own words rather than a machine translation of them.
     const course = await getJson(`/api-2.0/courses/${slug}/?fields[course]=id,locale`);
     const id = course && course.id;
-    if (!id) throw new Error("หา course id ไม่เจอ");
+    if (!id) throw new Error(UDTH.i18n.t("หา course id ไม่เจอ"));
     const locale = (course.locale && course.locale.locale) || "";
     courseIdCache = { slug, id, locale };
     return id;
@@ -70,7 +70,7 @@
   // has not opened yet.
   async function fetchLectureAsset(lecture) {
     const target = lecture || lectureId();
-    if (!target) throw new Error("อ่านรหัสบทเรียนจาก URL ไม่ได้");
+    if (!target) throw new Error(UDTH.i18n.t("อ่านรหัสบทเรียนจาก URL ไม่ได้"));
 
     const courseId = await getCourseId();
     const data = await getJson(

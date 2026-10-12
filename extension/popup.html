@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="th">
+<html lang="th" data-udth-own-page>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -78,6 +78,8 @@
       .brand h1 { margin: 0; font-size: 16px; font-weight: 700; }
       .brand p { margin: 0; color: var(--text-3); font-size: 12px; }
       .version { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+      .lang { flex: none; padding: 2px; border-radius: 10px; }
+      .lang .seg-btn { min-height: 30px; min-width: 40px; padding: 0 8px; font-size: 12.5px; }
 
       main { display: flex; flex-direction: column; gap: 10px; padding: 0 12px; }
 
@@ -157,53 +159,58 @@
   <body>
     <header class="top">
       <div class="logo" aria-hidden="true">ท</div>
-      <div class="brand"><h1>ฮองเรียน</h1><p>ซับไทย + เสียงพากย์ · Udemy / YouTube</p></div>
+      <div class="brand"><h1 data-i18n>ฮองเรียน</h1><p data-i18n>ซับไทย + เสียงพากย์ · Udemy / YouTube</p></div>
+      <!-- Each language is named in itself, so either reader can find theirs. -->
+      <div class="seg lang" role="group" aria-label="ภาษาของหน้าจอ" data-i18n-aria>
+        <button type="button" class="seg-btn" data-lang="th" lang="th">ไทย</button>
+        <button type="button" class="seg-btn" data-lang="en" lang="en">EN</button>
+      </div>
       <span class="version">v</span>
     </header>
 
     <main>
-      <div id="status" class="status" role="status" aria-live="polite">กำลังตรวจสอบ ...</div>
+      <div id="status" class="status" role="status" aria-live="polite" data-i18n>กำลังตรวจสอบ ...</div>
 
-      <div class="list" role="group" aria-label="การแสดงผล">
+      <div class="list" role="group" aria-label="การแสดงผล" data-i18n-aria>
         <label class="row">
           <input type="checkbox" id="enabled" checked />
           <span class="ico"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></svg></span>
-          <span class="txt"><b>ซับไทย</b><small>แสดงคำแปลทับบนวิดีโอ</small></span>
+          <span class="txt"><b data-i18n>ซับไทย</b><small data-i18n>แสดงคำแปลทับบนวิดีโอ</small></span>
           <span class="switch" aria-hidden="true"></span>
         </label>
         <label class="row">
           <input type="checkbox" id="dual" checked />
           <span class="ico"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg></span>
-          <span class="txt"><b>อังกฤษกำกับ</b><small>ต้นฉบับบรรทัดเล็กใต้ซับไทย</small></span>
+          <span class="txt"><b data-i18n>ต้นฉบับกำกับ</b><small data-i18n>ต้นฉบับบรรทัดเล็กใต้ซับไทย</small></span>
           <span class="switch" aria-hidden="true"></span>
         </label>
         <label class="row">
           <input type="checkbox" id="dubbing" />
           <span class="ico"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></span>
-          <span class="txt"><b>พากย์เสียงไทย</b><small>อ่านซับไทยออกเสียงตามจังหวะ</small></span>
+          <span class="txt"><b data-i18n>พากย์เสียงไทย</b><small data-i18n>อ่านซับไทยออกเสียงตามจังหวะ</small></span>
           <span class="switch" aria-hidden="true"></span>
         </label>
       </div>
 
       <section class="card" id="audioSettings" aria-labelledby="audio-title" hidden>
-        <h2 class="card-title" id="audio-title"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>ตั้งค่าเสียงพากย์</h2>
-        <div class="field"><label for="ttsEngine">เครื่องมือเสียง</label><select id="ttsEngine"></select></div>
-        <div class="field"><label for="voice">เสียง</label><select id="voice"><option value="">เลือกอัตโนมัติ</option></select></div>
+        <h2 class="card-title" id="audio-title"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span data-i18n>ตั้งค่าเสียงพากย์</span></h2>
+        <div class="field"><label for="ttsEngine" data-i18n>เครื่องมือเสียง</label><select id="ttsEngine"></select></div>
+        <div class="field"><label for="voice" data-i18n>เสียง</label><select id="voice"></select></div>
         <div class="field" id="startField" hidden>
-          <span class="field-label" id="start-label">เริ่มเล่นเมื่อไหร่</span>
+          <span class="field-label" id="start-label" data-i18n>เริ่มเล่นเมื่อไหร่</span>
           <div class="seg" role="group" aria-labelledby="start-label">
-            <button type="button" class="seg-btn" data-start="instant"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>เริ่มทันที</button>
-            <button type="button" class="seg-btn" data-start="accurate"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>แม่นยำ</button>
+            <button type="button" class="seg-btn" data-start="instant"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span data-i18n>เริ่มทันที</span></button>
+            <button type="button" class="seg-btn" data-start="accurate"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span data-i18n>แม่นยำ</span></button>
           </div>
           <small class="field-hint" id="startHint"></small>
         </div>
-        <div class="field"><div class="field-head"><label for="dubbingVolume">ความดังเสียงพากย์</label><output id="dubbingValue" for="dubbingVolume">100%</output></div><input type="range" id="dubbingVolume" min="0" max="1" step="0.05" value="1" /></div>
-        <div class="field"><div class="field-head"><label for="originalAudioVolume">ความดังเสียงผู้สอน</label><output id="originalAudioValue" for="originalAudioVolume">15%</output></div><input type="range" id="originalAudioVolume" min="0" max="1" step="0.05" value="0.15" /></div>
+        <div class="field"><div class="field-head"><label for="dubbingVolume" data-i18n>ความดังเสียงพากย์</label><output id="dubbingValue" for="dubbingVolume">100%</output></div><input type="range" id="dubbingVolume" min="0" max="1" step="0.05" value="1" /></div>
+        <div class="field"><div class="field-head"><label for="originalAudioVolume" data-i18n>ความดังเสียงผู้สอน</label><output id="originalAudioValue" for="originalAudioVolume">15%</output></div><input type="range" id="originalAudioVolume" min="0" max="1" step="0.05" value="0.15" /></div>
       </section>
 
       <div class="actions">
-        <button id="section" class="btn btn-primary"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>แปลทั้ง Section นี้ล่วงหน้า</button>
-        <button id="retry" class="btn"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></svg>แปลบทเรียนนี้ใหม่</button>
+        <button id="section" class="btn btn-primary"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span data-i18n>แปลทั้ง Section นี้ล่วงหน้า</span></button>
+        <button id="retry" class="btn"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></svg><span data-i18n>แปลบทเรียนนี้ใหม่</span></button>
       </div>
 
       <div class="queue" id="queue" style="display: none" aria-live="polite">
@@ -212,9 +219,10 @@
         <div class="queue-track"><div class="queue-fill" id="queueFill"></div></div>
       </div>
 
-      <p class="hint" id="hint">ต้องเปิด <code>start-server.cmd</code> ค้างไว้ระหว่างเรียน</p>
+      <p class="hint" id="hint" data-i18n-html>ต้องเปิด <code>start-server.cmd</code> ค้างไว้ระหว่างเรียน</p>
     </main>
 
+    <script src="core/i18n.js"></script>
     <script src="core/settings.js"></script>
     <script src="core/api.js"></script>
     <script src="popup.js"></script>

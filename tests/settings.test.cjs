@@ -36,7 +36,7 @@ test('settings saved by the old version carry over', async () => {
   });
   const store = createSettingsStore(mem);
   assert.deepEqual(await store.load(), {
-    v: 2, subtitles: 'th', textSize: 'l',
+    v: 2, subtitles: 'th', textSize: 'l', lang: 'th',
     dub: {on: true, engine: 'seamless', voice: 'seamless:th', start: 'accurate', volume: 0.8, sourceVolume: 0.3, maxRate: 1.4},
   });
   assert.ok(!('dualMode' in mem.data()), 'old keys are removed once migrated');
@@ -73,4 +73,12 @@ test('every open view hears a change made in another one', async () => {
   page.subscribe(s => heard.push(s.subtitles));
   await popup.save({subtitles: 'off'});
   assert.deepEqual(heard, ['off']);
+});
+
+test('the interface language: a new install follows the browser, earlier users stay in Thai', async () => {
+  assert.equal((await createSettingsStore(memoryStorage()).load()).lang, 'auto');
+  const before120 = memoryStorage({settings: {v: 2, subtitles: 'th', textSize: 'm', dub: {}}});
+  assert.equal((await createSettingsStore(before120).load()).lang, 'th');
+  const chosen = memoryStorage({settings: {v: 2, lang: 'en', dub: {}}});
+  assert.equal((await createSettingsStore(chosen).load()).lang, 'en');
 });

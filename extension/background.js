@@ -9,6 +9,20 @@
 // (core/api.js) owns what requests mean and all the waiting, because it lives
 // in the tab and is not subject to that lifetime.
 
+/* global importScripts */
+importScripts("core/i18n.js");
+const { t } = UDTH.i18n;
+
+// Errors written here reach the page as text, so they follow the language the
+// user chose. The worker can restart at any time: read it again on start.
+// Same rule as core/settings.js: saved settings without a language predate the
+// choice and stay Thai; no settings at all is a new install and follows the browser.
+const followLanguage = (settings) => UDTH.i18n.setLang(settings ? settings.lang || "th" : "auto");
+chrome.storage.local.get("settings").then((stored) => followLanguage(stored.settings), () => {});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.settings) followLanguage(changes.settings.newValue);
+});
+
 const DEFAULT_SERVER = "http://127.0.0.1:8765";
 
 async function localFetch(url, options = {}, timeoutMs = 25000) {
@@ -17,7 +31,7 @@ async function localFetch(url, options = {}, timeoutMs = 25000) {
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(`เซิร์ฟเวอร์ไม่ตอบภายใน ${timeoutMs / 1000} วินาที`);
+    if (controller.signal.aborted) throw new Error(t("เซิร์ฟเวอร์ไม่ตอบภายใน {seconds} วินาที", { seconds: timeoutMs / 1000 }));
     throw error;
   } finally {
     clearTimeout(timer);
@@ -74,7 +88,7 @@ async function apiRequest({ method = "GET", path, body = null, timeoutMs = 25000
     return { ok: false, unreachable: true, error: String((error && error.message) || error) };
   }
   if (audio) {
-    if (!response.ok) return { ok: false, status: response.status, error: `อ่านไฟล์เสียงไม่ได้ (HTTP ${response.status})` };
+    if (!response.ok) return { ok: false, status: response.status, error: t("อ่านไฟล์เสียงไม่ได้ (HTTP {status})", { status: response.status }) };
     return {
       ok: true,
       status: response.status,
@@ -82,7 +96,7 @@ async function apiRequest({ method = "GET", path, body = null, timeoutMs = 25000
     };
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) return { ok: false, status: response.status, error: data.error || `เซิร์ฟเวอร์ตอบ ${response.status}` };
+  if (!response.ok) return { ok: false, status: response.status, error: data.error || t("เซิร์ฟเวอร์ตอบ {status}", { status: response.status }) };
   return { ok: true, status: response.status, data };
 }
 
@@ -136,7 +150,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "youtubeCaptions") {
     const tabId = sender.tab && sender.tab.id;
     if (!tabId) {
-      sendResponse({ ok: false, error: "ไม่รู้ว่าอยู่แท็บไหน" });
+      sendResponse({ ok: false, error: t("ไม่รู้ว่าอยู่แท็บไหน") });
       return false;
     }
     youtubeCaptionTracks(tabId)

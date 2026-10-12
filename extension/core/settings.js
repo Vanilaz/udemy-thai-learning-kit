@@ -9,6 +9,10 @@
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
 
   const KEY = "settings";
+  // Interface language for settings saved before it could be chosen (1.2.0):
+  // those users have only ever seen Thai, so "auto" must not switch them to
+  // English because their browser happens to be in English.
+  const EARLIER_USERS_LANG = "th";
   const LEGACY_KEYS = [
     "enabled", "dualMode", "capSize", "dubbingEnabled", "ttsEngine", "ttsVoice",
     "dubSource", "dubbingVolume", "originalAudioVolume", "dubRateCap",
@@ -18,6 +22,7 @@
     v: 2,
     subtitles: "both", // "off" | "th" | "both" (Thai with the original under it)
     textSize: "m", // "s" | "m" | "l"
+    lang: "auto", // interface language: "auto" (follow the browser) | "th" | "en"
     dub: Object.freeze({
       on: false,
       engine: "edge",
@@ -44,6 +49,7 @@
       v: 2,
       subtitles: oneOf(r.subtitles, ["off", "th", "both"], DEFAULTS.subtitles),
       textSize: oneOf(r.textSize, ["s", "m", "l"], DEFAULTS.textSize),
+      lang: oneOf(r.lang, ["auto", "th", "en"], DEFAULTS.lang),
       dub: {
         on: typeof d.on === "boolean" ? d.on : D.on,
         engine: text(d.engine, D.engine) || D.engine,
@@ -83,9 +89,9 @@
     async function load() {
       const stored = await area.get([KEY, ...LEGACY_KEYS]);
       if (stored[KEY]) {
-        current = normalize(stored[KEY]);
+        current = normalize({ lang: EARLIER_USERS_LANG, ...stored[KEY] });
       } else if (LEGACY_KEYS.some((k) => k in stored)) {
-        current = fromLegacy(stored);
+        current = { ...fromLegacy(stored), lang: EARLIER_USERS_LANG };
         await area.set({ [KEY]: current });
         await area.remove(LEGACY_KEYS);
       } else {
@@ -121,6 +127,6 @@
     return { load, save, subscribe, get: () => current };
   }
 
-  UDTH.settings = { createSettingsStore, normalize, DEFAULTS };
+  UDTH.settings = { createSettingsStore, normalize, DEFAULTS, EARLIER_USERS_LANG };
   if (typeof module !== "undefined") module.exports = UDTH.settings;
 })();

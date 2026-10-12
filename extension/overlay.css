@@ -441,6 +441,10 @@ html.udth-hide-native .ytp-caption-window-container {
   color: var(--udth-on-accent);
 }
 
+/* Interface language, compact in the header next to the close button. */
+.udth-seg-lang { flex: none; padding: 2px; }
+.udth-seg-lang button { min-height: 28px; min-width: 38px; padding: 0 8px; font-size: 12px; }
+
 /* Text size: "ก" drawn at the three sizes it selects. */
 .udth-seg-size { flex: none; width: 132px; }
 .udth-seg-size button { min-height: 30px; padding: 0; line-height: 1; }
@@ -614,7 +618,8 @@ html.udth-hide-native .ytp-caption-window-container {
 
 .udth-menu-actions {
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* minmax(0, ...): a longer label (English) must not push the menu wider. */
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -633,6 +638,8 @@ html.udth-hide-native .ytp-caption-window-container {
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   transition: background var(--udth-fast) ease, transform 100ms ease;
 }

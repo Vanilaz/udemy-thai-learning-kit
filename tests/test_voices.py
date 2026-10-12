@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
-from udemy_th import omnivoice_tts, seamless_tts
+from udemy_th import omnivoice_tts, seamless_tts, tts
+
+I18N = Path(__file__).resolve().parent.parent / "extension" / "core" / "i18n.js"
+THAI = re.compile(r"[฀-๿]")
 
 
 class OmniVoiceInstructTests(unittest.TestCase):
@@ -23,6 +27,20 @@ class OmniVoiceInstructTests(unittest.TestCase):
     def test_every_listed_voice_except_clone_has_an_instruct(self):
         presets = set(omnivoice_tts.VOICES) - {"omnivoice:clone"}
         self.assertEqual(presets, set(omnivoice_tts._INSTRUCTIONS))
+
+
+class LabelTranslationTests(unittest.TestCase):
+    """The extension shows engine and voice names in English too; its table
+    (SERVER_LABELS_EN in extension/core/i18n.js) must list exactly the Thai
+    names the server sends."""
+
+    def test_every_thai_engine_or_voice_name_has_an_english_one_and_no_more(self):
+        with tempfile.TemporaryDirectory() as cache:
+            catalogue = tts.TtsRegistry(Path(cache)).catalogue()
+        sent = {e["label"] for e in catalogue} | {v["label"] for e in catalogue for v in e["voices"]}
+        table = re.search(r"const SERVER_LABELS_EN = \{(.*?)\n  \};", I18N.read_text(encoding="utf-8"), re.S)
+        translated = set(re.findall(r'^\s*"([^"]*)":', table.group(1), re.M))
+        self.assertEqual({label for label in sent if THAI.search(label)}, translated)
 
 
 class SeamlessCacheTests(unittest.TestCase):

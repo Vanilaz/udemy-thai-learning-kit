@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "ฮองเรียน — HongRian",
-  "version": "1.1.0",
-  "description": "ซับไทยและเสียงพากย์ไทยด้วย AI บนวิดีโอ Udemy และ YouTube",
+  "name": "__MSG_name__",
+  "version": "1.2.0",
+  "description": "__MSG_description__",
+  "default_locale": "en",
   "permissions": [
     "storage",
     "activeTab",
@@ -31,6 +32,7 @@
         "https://www.youtube.com/shorts/*"
       ],
       "js": [
+        "core/i18n.js",
         "sites.js",
         "sites/udemy.js",
         "core/timeline.js",
@@ -65,7 +67,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "ฮองเรียน — ซับไทยและเสียงพากย์",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

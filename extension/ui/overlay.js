@@ -151,7 +151,7 @@
           main.classList.add("udth-draft");
           const tag = document.createElement("span");
           tag.className = "udth-draft-tag";
-          tag.textContent = "แปลด่วน";
+          tag.textContent = UDTH.i18n.t("แปลด่วน");
           main.appendChild(tag);
         }
         line.appendChild(main);

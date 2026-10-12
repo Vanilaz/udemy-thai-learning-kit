@@ -8,6 +8,7 @@
 "use strict";
 (() => {
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
+  const { t } = UDTH.i18n || require("./i18n.js");
 
   const POLL_INTERVAL_MS = 2000;
   const POLL_TIMEOUT_MS = 15 * 60 * 1000;
@@ -25,12 +26,12 @@
 
   function describeExtensionError(message) {
     if (/context invalidated|receiving end does not exist/i.test(message)) {
-      return "ส่วนขยายเพิ่งถูกอัปเดต กด F5 รีเฟรชหน้านี้หนึ่งครั้ง";
+      return t("ส่วนขยายเพิ่งถูกอัปเดต กด F5 รีเฟรชหน้านี้หนึ่งครั้ง");
     }
     if (/message (channel|port) closed/i.test(message)) {
-      return "การเชื่อมต่อกับส่วนขยายหลุด กำลังลองใหม่";
+      return t("การเชื่อมต่อกับส่วนขยายหลุด กำลังลองใหม่");
     }
-    return `ติดต่อส่วนขยายไม่ได้: ${message.slice(0, 80)}`;
+    return t("ติดต่อส่วนขยายไม่ได้: {detail}", { detail: message.slice(0, 80) });
   }
 
   /**
@@ -56,11 +57,11 @@
       } catch (error) {
         throw new ApiError(describeExtensionError(String((error && error.message) || error)), "extension");
       }
-      if (!reply) throw new ApiError("ส่วนขยายไม่ตอบ กด F5 รีเฟรชหน้านี้", "extension");
+      if (!reply) throw new ApiError(t("ส่วนขยายไม่ตอบ กด F5 รีเฟรชหน้านี้"), "extension");
       if (reply.unreachable) {
-        throw new ApiError("ยังไม่ได้เปิดเซิร์ฟเวอร์ ดับเบิลคลิก start-server.cmd", "unreachable");
+        throw new ApiError(t("ยังไม่ได้เปิดเซิร์ฟเวอร์ ดับเบิลคลิก start-server.cmd"), "unreachable");
       }
-      if (!reply.ok) throw new ApiError(reply.error || `เซิร์ฟเวอร์ตอบ ${reply.status}`, "server");
+      if (!reply.ok) throw new ApiError(reply.error || t("เซิร์ฟเวอร์ตอบ {status}", { status: reply.status }), "server");
       return reply.data;
     }
 
@@ -109,14 +110,14 @@
           const info = await call("GET", `/job/${job.job}`, null, { timeoutMs: 10000 });
           check();
           if (info.status === "done") return info.cues || [];
-          if (info.status === "error") throw new ApiError(`แปลไม่สำเร็จ: ${info.error || "ไม่ทราบสาเหตุ"}`, "server");
-          if (info.status === "cancelled") throw new ApiError("งานแปลนี้ถูกยกเลิก", "server");
+          if (info.status === "error") throw new ApiError(t("แปลไม่สำเร็จ: {reason}", { reason: info.error || t("ไม่ทราบสาเหตุ") }), "server");
+          if (info.status === "cancelled") throw new ApiError(t("งานแปลนี้ถูกยกเลิก"), "server");
           // A running job publishes what it has finished so far; handing it
           // over now is what lets the lecture start before the whole is done.
           if (onPartial && info.cues && info.cues.length) onPartial(info.cues);
           if (onProgress) onProgress(info.progress || 0, info.chunks || 0);
         }
-        throw new ApiError("แปลนานเกินไป ยกเลิกแล้ว", "server");
+        throw new ApiError(t("แปลนานเกินไป ยกเลิกแล้ว"), "server");
       },
 
       /**

@@ -5,6 +5,7 @@
 (() => {
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
   const log = (...args) => console.log("[udth]", ...args);
+  const t = (text, vars) => UDTH.i18n.t(text, vars);
 
   // Small inline icons (Lucide-style strokes): SVG, never emoji.
   const icon = (d, size = 16) =>
@@ -20,68 +21,73 @@
     'stroke-linecap="round" stroke-linejoin="round"/></svg>' +
     '<i class="udth-dot" aria-hidden="true"></i>';
 
-  const BROWSER_ENGINE = {
-    name: "windows", label: "Windows (เสียงในเบราว์เซอร์)", ready: true, translates: false, voices: [], error: "",
-  };
+  const browserEngine = () => ({
+    name: "windows", label: t("Windows (เสียงในเบราว์เซอร์)"), ready: true, translates: false, voices: [], error: "",
+  });
 
   function menuHtml(version) {
     return (
       '<div class="udth-menu-head">' +
       '<div class="udth-logo" aria-hidden="true">ท</div>' +
-      '<div class="udth-menu-titles"><div class="udth-menu-title">ฮองเรียน</div>' +
-      '<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>ไทย' +
+      `<div class="udth-menu-titles"><div class="udth-menu-title">${t("ฮองเรียน")}</div>` +
+      `<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>${t("ไทย")}` +
       `<span class="udth-ver">· v${version}</span></div></div>` +
-      '<button type="button" class="udth-icon-btn" data-udth="close" aria-label="ปิดเมนู">' +
+      // Each language is named in itself, so either reader can find theirs.
+      `<div class="udth-seg udth-seg-lang" role="group" aria-label="${t("ภาษาของหน้าจอ")}">` +
+      '<button type="button" data-udth="lang" data-val="th" lang="th">ไทย</button>' +
+      '<button type="button" data-udth="lang" data-val="en" lang="en">EN</button></div>' +
+      `<button type="button" class="udth-icon-btn" data-udth="close" aria-label="${t("ปิดเมนู")}">` +
       icon('<path d="M18 6 6 18M6 6l12 12"/>', 18) + "</button></div>" +
       '<div class="udth-group">' +
       '<div class="udth-row-label">' +
       icon('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>', 14) +
-      "ซับบนวิดีโอ</div>" +
-      '<div class="udth-seg" role="group" aria-label="ซับบนวิดีโอ">' +
-      '<button type="button" data-udth="subtitles" data-val="off">ปิด</button>' +
-      '<button type="button" data-udth="subtitles" data-val="th">ไทย</button>' +
-      '<button type="button" data-udth="subtitles" data-val="both">ไทย + ต้นฉบับ</button></div>' +
-      '<div class="udth-row"><span class="udth-row-label">ขนาดตัวอักษร</span>' +
-      '<div class="udth-seg udth-seg-size" role="group" aria-label="ขนาดตัวอักษร">' +
-      '<button type="button" data-udth="textSize" data-val="s" aria-label="เล็ก" title="เล็ก">ก</button>' +
-      '<button type="button" data-udth="textSize" data-val="m" aria-label="กลาง" title="กลาง">ก</button>' +
-      '<button type="button" data-udth="textSize" data-val="l" aria-label="ใหญ่" title="ใหญ่">ก</button></div></div>' +
+      `${t("ซับบนวิดีโอ")}</div>` +
+      `<div class="udth-seg" role="group" aria-label="${t("ซับบนวิดีโอ")}">` +
+      `<button type="button" data-udth="subtitles" data-val="off">${t("ปิด")}</button>` +
+      `<button type="button" data-udth="subtitles" data-val="th">${t("ไทย")}</button>` +
+      `<button type="button" data-udth="subtitles" data-val="both">${t("ไทย + ต้นฉบับ")}</button></div>` +
+      `<div class="udth-row"><span class="udth-row-label">${t("ขนาดตัวอักษร")}</span>` +
+      `<div class="udth-seg udth-seg-size" role="group" aria-label="${t("ขนาดตัวอักษร")}">` +
+      // The sample stays a Thai letter in both languages: Thai is the text being sized.
+      `<button type="button" data-udth="textSize" data-val="s" aria-label="${t("เล็ก")}" title="${t("เล็ก")}">ก</button>` +
+      `<button type="button" data-udth="textSize" data-val="m" aria-label="${t("กลาง")}" title="${t("กลาง")}">ก</button>` +
+      `<button type="button" data-udth="textSize" data-val="l" aria-label="${t("ใหญ่")}" title="${t("ใหญ่")}">ก</button></div></div>` +
       "</div>" +
       '<div class="udth-group udth-dub-group">' +
       '<button type="button" class="udth-dubrow" data-udth="dub" aria-pressed="false">' +
       '<span class="udth-dubrow-ico">' +
       icon('<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>', 18) +
       "</span>" +
-      '<span class="udth-dubrow-txt"><b>พากย์เสียงไทย</b><small data-state="dub">ปิด</small></span>' +
+      `<span class="udth-dubrow-txt"><b>${t("พากย์เสียงไทย")}</b><small data-state="dub"></small></span>` +
       '<span class="udth-switch" aria-hidden="true"></span></button>' +
       '<div class="udth-start" data-udth-row="start">' +
-      '<div class="udth-seg" role="group" aria-label="เริ่มเล่นเมื่อไหร่">' +
+      `<div class="udth-seg" role="group" aria-label="${t("เริ่มเล่นเมื่อไหร่")}">` +
       '<button type="button" data-udth="start" data-val="instant">' +
-      icon('<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>', 14) + "เริ่มทันที</button>" +
+      icon('<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>', 14) + `${t("เริ่มทันที")}</button>` +
       '<button type="button" data-udth="start" data-val="accurate">' +
       icon('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>', 14) +
-      "แม่นยำ</button></div>" +
+      `${t("แม่นยำ")}</button></div>` +
       '<p class="udth-start-hint" data-state="start"></p></div>' +
       "</div>" +
       '<details class="udth-adv"><summary>' +
       icon('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>', 15) +
-      'ตั้งค่าเสียงพากย์<span class="udth-chev">' + icon('<path d="m6 9 6 6 6-6"/>', 16) + "</span></summary>" +
+      `${t("ตั้งค่าเสียงพากย์")}<span class="udth-chev">` + icon('<path d="m6 9 6 6 6-6"/>', 16) + "</span></summary>" +
       '<div class="udth-card">' +
-      '<label class="udth-field"><span>เครื่องมือเสียง</span><select data-udth="engine"></select></label>' +
-      '<label class="udth-field"><span>เสียง</span><select data-udth="voice"></select></label>' +
-      '<label class="udth-field"><span>ความดังเสียงพากย์</span>' +
+      `<label class="udth-field"><span>${t("เครื่องมือเสียง")}</span><select data-udth="engine"></select></label>` +
+      `<label class="udth-field"><span>${t("เสียง")}</span><select data-udth="voice"></select></label>` +
+      `<label class="udth-field"><span>${t("ความดังเสียงพากย์")}</span>` +
       '<input type="range" min="0" max="1" step="0.05" data-udth="volume"><output data-udth="volumeOut"></output></label>' +
-      '<label class="udth-field"><span>ความดังเสียงผู้สอน</span>' +
+      `<label class="udth-field"><span>${t("ความดังเสียงผู้สอน")}</span>` +
       '<input type="range" min="0" max="1" step="0.05" data-udth="sourceVolume"><output data-udth="sourceVolumeOut"></output></label>' +
-      '<label class="udth-field"><span>เร่งเสียงพากย์ได้สูงสุด</span>' +
+      `<label class="udth-field"><span>${t("เร่งเสียงพากย์ได้สูงสุด")}</span>` +
       '<input type="range" min="1" max="2" step="0.05" data-udth="maxRate"><output data-udth="maxRateOut"></output></label>' +
       "</div></details>" +
       '<div class="udth-menu-actions">' +
       '<button type="button" class="udth-btn" data-udth="retry">' +
       icon('<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/>', 15) +
-      "แปลใหม่</button>" +
+      `${t("แปลใหม่")}</button>` +
       '<button type="button" class="udth-btn udth-btn-primary" data-udth="section">' +
-      icon('<path d="M5 12h14M13 6l6 6-6 6"/>', 15) + "แปลทั้ง Section ล่วงหน้า</button>" +
+      icon('<path d="M5 12h14M13 6l6 6-6 6"/>', 15) + `${t("แปลทั้ง Section ล่วงหน้า")}</button>` +
       "</div>" +
       '<div class="udth-panel-note" role="status" aria-live="polite"></div>'
     );
@@ -106,16 +112,17 @@
     let el = null;
     let open = false;
     let version = "";
+    let builtIn = ""; // the language the nodes were built in
     try {
       version = chrome.runtime.getManifest().version;
     } catch {
       /* the page outlived an extension update */
     }
 
-    const catalogue = () => [BROWSER_ENGINE, ...engines()];
+    const catalogue = () => [browserEngine(), ...engines().map(UDTH.i18n.localizeEngine)];
     const engineByName = (name) =>
       catalogue().find((e) => e.name === name) ||
-      { name, label: name, ready: false, translates: false, voices: [], error: "เซิร์ฟเวอร์ไม่มีเครื่องมือเสียงนี้" };
+      { name, label: name, ready: false, translates: false, voices: [], error: t("เซิร์ฟเวอร์ไม่มีเครื่องมือเสียงนี้") };
     const browserVoices = () => (UDTH.voices ? UDTH.voices.browserVoiceNames() : []).map((n) => ({ id: n, label: n }));
     const voicesOf = (name) => (name === "windows" ? browserVoices() : engineByName(name).voices || []);
     const $ = (key) => el && el.querySelector(`[data-udth="${key}"]`);
@@ -194,7 +201,7 @@
     }
 
     function ensure() {
-      if (button && button.isConnected && el && el.isConnected) {
+      if (button && button.isConnected && el && el.isConnected && builtIn === UDTH.i18n.lang()) {
         if (button.classList.contains("udth-pill-floating")) dockButton(button);
         return;
       }
@@ -207,9 +214,9 @@
       button.type = "button";
       button.className = "udth-pill udth-pill-floating";
       button.dataset.udth = "toggle";
-      button.setAttribute("aria-label", "ซับไทยและเสียงพากย์");
+      button.setAttribute("aria-label", t("ซับไทยและเสียงพากย์"));
       button.setAttribute("aria-haspopup", "dialog");
-      button.title = "ซับไทยและเสียงพากย์";
+      button.title = t("ซับไทยและเสียงพากย์");
       button.innerHTML = BUTTON_GLYPH;
       host.appendChild(button);
       dockButton(button);
@@ -218,7 +225,9 @@
       el.className = "udth-menu";
       el.hidden = true;
       el.setAttribute("role", "dialog");
-      el.setAttribute("aria-label", "ฮองเรียน: ซับไทยและเสียงพากย์");
+      el.setAttribute("aria-label", t("ฮองเรียน: ซับไทยและเสียงพากย์"));
+      el.lang = UDTH.i18n.lang();
+      builtIn = UDTH.i18n.lang();
       el.innerHTML = menuHtml(version);
       host.appendChild(el);
       wire(button);
@@ -242,13 +251,14 @@
           button.focus();
         } else if (action === "subtitles") store.save({ subtitles: val });
         else if (action === "textSize") store.save({ textSize: val });
+        else if (action === "lang") store.save({ lang: val });
         else if (action === "dub") store.save({ dub: { on: !dub.on } });
         else if (action === "start") store.save({ dub: { start: val } });
         else if (action === "retry") onRetranslate();
         else if (action === "section" && onTranslateSection) {
-          setNote("กำลังเตรียมคิว ...");
+          setNote(t("กำลังเตรียมคิว ..."));
           onTranslateSection().then(
-            (res) => setNote(res.ok ? "ส่งเข้าคิวแล้ว ดูความคืบหน้าที่มุมซ้ายล่าง" : res.error, !res.ok),
+            (res) => setNote(res.ok ? t("ส่งเข้าคิวแล้ว ดูความคืบหน้าที่มุมซ้ายล่าง") : res.error, !res.ok),
             (err) => setNote(String((err && err.message) || err), true)
           );
         }
@@ -302,10 +312,23 @@
       if (!el) return;
       const s = store.get();
       if (!s) return;
+      // The language changed: rebuild in the new one. The menu stays open and
+      // focus returns to the language switch the user just pressed.
+      if (builtIn !== UDTH.i18n.lang()) {
+        const hadFocus = el.contains(document.activeElement);
+        ensure();
+        if (hadFocus && el) {
+          const chosen = el.querySelector(`[data-udth="lang"][data-val="${UDTH.i18n.lang()}"]`);
+          if (chosen) chosen.focus();
+        }
+        return;
+      }
       const dub = s.dub;
       const engine = engineByName(dub.engine);
-      const current = { subtitles: s.subtitles, textSize: s.textSize, start: dub.start };
-      for (const b of el.querySelectorAll('[data-udth="subtitles"], [data-udth="textSize"], [data-udth="start"]')) {
+      const current = { subtitles: s.subtitles, textSize: s.textSize, start: dub.start, lang: UDTH.i18n.lang() };
+      for (const b of el.querySelectorAll(
+        '[data-udth="subtitles"], [data-udth="textSize"], [data-udth="start"], [data-udth="lang"]'
+      )) {
         const on = b.dataset.val === current[b.dataset.udth];
         b.classList.toggle("udth-seg-on", on);
         b.setAttribute("aria-pressed", String(on));
@@ -314,15 +337,15 @@
       dubRow.classList.toggle("udth-dubrow-on", dub.on);
       dubRow.setAttribute("aria-pressed", String(dub.on));
       el.querySelector('[data-state="dub"]').textContent = dub.on
-        ? `เปิดอยู่ · ${voiceLabel(dub)}`
-        : "ปิด · กดเพื่อฟังเสียงพากย์ไทย";
+        ? t("เปิดอยู่ · {voice}", { voice: voiceLabel(dub) })
+        : t("ปิด · กดเพื่อฟังเสียงพากย์ไทย");
 
       // The start choice only means something for a voice that can translate.
       el.querySelector('[data-udth-row="start"]').hidden = !(dub.on && engine.translates);
       el.querySelector('[data-state="start"]').textContent =
         dub.start === "instant"
-          ? "เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ"
-          : "รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ แม่นที่สุด";
+          ? t("เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ")
+          : t("รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ แม่นที่สุด");
 
       button.classList.toggle("udth-pill-on", s.subtitles !== "off" || dub.on);
       button.classList.toggle("udth-pill-open", open);
@@ -331,19 +354,19 @@
       if (!open) return;
 
       // "EN-US" -> "EN": the language matters to the viewer, not the region.
-      $("src").textContent = (sourceLang() || "EN").split("-")[0];
+      $("src").textContent = (sourceLang() || "EN").split("-")[0].toUpperCase();
       const engineOptions = catalogue().map((e) => ({
         value: e.name,
-        label: e.ready ? e.label : `${e.label} (ยังไม่พร้อม)`,
+        label: e.ready ? e.label : t("{engine} (ยังไม่พร้อม)", { engine: e.label }),
       }));
       if (!catalogue().some((e) => e.name === dub.engine)) {
-        engineOptions.push({ value: dub.engine, label: `${dub.engine} (ยังไม่พร้อม)` });
+        engineOptions.push({ value: dub.engine, label: t("{engine} (ยังไม่พร้อม)", { engine: dub.engine }) });
       }
       fillSelect($("engine"), engineOptions, dub.engine);
       const voices = voicesOf(dub.engine);
       fillSelect(
         $("voice"),
-        voices.length ? voices.map((v) => ({ value: v.id, label: v.label })) : [{ value: "", label: "เลือกอัตโนมัติ" }],
+        voices.length ? voices.map((v) => ({ value: v.id, label: v.label })) : [{ value: "", label: t("เลือกอัตโนมัติ") }],
         dub.voice
       );
       $("volume").value = String(dub.volume);
