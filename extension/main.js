@@ -186,6 +186,14 @@
   // -------------------------------------------------------- session -> view
 
   function waitingView(waitingFor) {
+    // Only the dub's audio after a seek: a short wait, so a short card.
+    if (waitingFor.speech && !waitingFor.translation && !waitingFor.voice) {
+      return {
+        title: t("กำลังเตรียมเสียงพากย์ช่วงนี้ ..."),
+        detail: t("วิดีโอจะเล่นต่อเองในอีกไม่กี่วินาที"),
+        progress: null,
+      };
+    }
     const steps = [];
     let progress = null;
     const tr = waitingFor.translation;

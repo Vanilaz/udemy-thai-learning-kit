@@ -4,7 +4,7 @@
 // whether the video may play:
 //
 //   loading -> unavailable {reason} | error {message}
-//           -> waiting {waitingFor: {translation?, voice?}} -> playing {translating, notice?}
+//           -> waiting {waitingFor: {translation?, voice?, speech?}} -> playing {translating, notice?}
 //
 // It holds the video while anything in `waitingFor` is outstanding, and lets
 // it go the moment nothing is (or the user skips). The views render whatever
@@ -20,6 +20,12 @@
   // out of order, so what matters is whether the stretch the viewer is about
   // to watch is covered, not how many chunks are done.
   const READY_AHEAD_SECONDS = 90;
+  // After a seek, the dub's next line usually has its audio within a second
+  // or two. The video is held for it (with the waiting card) rather than
+  // playing on in silence, but only when it is not ready almost at once, so
+  // a quick answer does not flash the card, and never for long.
+  const SPEECH_HOLD_AFTER_MS = 150;
+  const SPEECH_WAIT_MAX_MS = 8000;
 
   /**
    * @param {object} deps
@@ -53,6 +59,9 @@
     let unsubscribe = () => {};
     let jobId = null;
     let seekHeld = false; // waiting again because the viewer jumped past the translation
+    let catchingUp = false; // waiting for the dub's audio at the spot the viewer jumped to
+    let seekToken = 0;
+    let snappedTo = null; // where we last moved the video ourselves
     const hold = { active: false, wasPlaying: false, onPlay: null };
 
     const dub = () => settings.get().dub;
@@ -112,10 +121,12 @@
         };
       }
       if (dub().on && voiceLoading) reasons.voice = { engine: dub().engine };
+      if (catchingUp && dub().on) reasons.speech = {};
       if (skipped || !Object.keys(reasons).length) {
         phase = "playing";
         waitingFor = {};
         seekHeld = false;
+        catchingUp = false;
         releaseVideo();
         publish();
         if (dubber) dubber.refresh();
@@ -169,20 +180,82 @@
       return first;
     }
 
-    // A seek while the AI is still working: point the server at the new spot,
-    // and in accurate mode hold again if that stretch is not translated yet.
-    // Skipping the wait once means the user prefers not to be held in this
-    // lecture, so a seek never re-holds after that.
+    // A seek. While the AI is still working, point it at the new spot. A seek
+    // into the middle of a sentence moves back to where it starts. In
+    // accurate mode, hold again if the stretch is not translated yet; where
+    // there is text to say, hold briefly for the dub's audio instead (see
+    // SPEECH_HOLD_AFTER_MS). Skipping the wait once means the user prefers
+    // not to be held in this lecture, so a seek never holds after that.
     function onSeeked() {
-      if (disposed || !timeline || !translating) return;
+      if (disposed || !timeline) return;
       const now = video.currentTime || 0;
-      if (jobId) api.focus(jobId, now).catch(() => {});
-      if (phase !== "playing" || skipped || instant()) return;
-      if (timeline.finalCoverage(now) >= READY_AHEAD_SECONDS || timeline.translatedToEnd(now)) return;
-      debug(`กรอไป ${Math.round(now)}s ยังไม่แปล รอแปลช่วงนี้ก่อน`);
-      phase = "waiting";
-      seekHeld = true;
-      evaluate();
+      if (translating && jobId) api.focus(jobId, now).catch(() => {});
+      // Landed in the middle of a sentence the dub can say: start the video
+      // at that sentence instead, so it is heard whole in Thai rather than
+      // its rest in English. The seek this causes comes back here and
+      // carries on below (never moved twice: snappedTo).
+      const ours = snappedTo !== null && Math.abs(now - snappedTo) < 0.5;
+      snappedTo = null;
+      const start = !ours && dub().on && dubber ? dubber.lineStartAt(now) : null;
+      if (start !== null) {
+        debug(`กรอไป ${Math.round(now)}s กลางประโยค ถอยไปต้นประโยค ${Math.round(start)}s`);
+        snappedTo = start;
+        video.currentTime = start;
+        return;
+      }
+      if (skipped) return;
+      if (phase === "waiting" && catchingUp) {
+        catchUp(now); // jumped again while waiting: wait for the new spot instead
+        return;
+      }
+      if (phase !== "playing") return;
+      const untranslated =
+        translating && !instant() &&
+        timeline.finalCoverage(now) < READY_AHEAD_SECONDS && !timeline.translatedToEnd(now);
+      if (untranslated) {
+        debug(`กรอไป ${Math.round(now)}s ยังไม่แปล รอแปลช่วงนี้ก่อน`);
+        phase = "waiting";
+        seekHeld = true;
+        evaluate();
+        return;
+      }
+      catchUp(now);
+    }
+
+    function catchUp(time) {
+      const mine = (seekToken += 1);
+      // Holding a paused video is pointless; while we hold it ourselves, what
+      // counts is whether it was playing before.
+      const playing = catchingUp ? hold.wasPlaying : !video.paused;
+      // Always start fetching the line due there; wait for it only if playing.
+      const due = dub().on && dubber ? dubber.prepareAt(time) : null;
+      const ready = playing ? due : null;
+      if (!ready) {
+        if (catchingUp) {
+          catchingUp = false;
+          evaluate();
+        }
+        return;
+      }
+      let settled = false;
+      const settle = () => {
+        if (settled || mine !== seekToken || disposed) return;
+        settled = true;
+        if (catchingUp) {
+          catchingUp = false;
+          evaluate();
+        }
+      };
+      ready.then(settle);
+      sleep(SPEECH_WAIT_MAX_MS).then(settle);
+      if (catchingUp) return; // already holding: keep the card up for the new spot
+      sleep(SPEECH_HOLD_AFTER_MS).then(() => {
+        if (settled || mine !== seekToken || disposed || phase !== "playing" || skipped) return;
+        debug(`กรอไป ${Math.round(time)}s รอเสียงพากย์ช่วงนี้`);
+        catchingUp = true;
+        phase = "waiting";
+        evaluate();
+      });
     }
 
     function buildDubber() {

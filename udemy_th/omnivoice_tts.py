@@ -9,7 +9,8 @@ Two things it can do that no hosted engine here can:
   * run entirely offline, so a long course costs nothing and leaks nothing
   * clone a voice from a reference clip — point UDTH_OMNIVOICE_REF at a short
     sample of the instructor and the dub keeps their voice instead of swapping
-    in a stranger's
+    in a stranger's. UDTH_OMNIVOICE_REF_TEXT is what the clip says; without it
+    the clip is transcribed once (Whisper) and the transcript kept in the cache
 
 The model is loaded on first use, not at import: the server must start in a
 second on a machine with no GPU and no torch installed, and most users will
@@ -59,7 +60,9 @@ class OmniVoiceTts:
     def __init__(self, cache_dir: Path):
         self.cache_dir = cache_dir / "audio"
         self.reference = os.environ.get("UDTH_OMNIVOICE_REF") or None
+        self.reference_text = os.environ.get("UDTH_OMNIVOICE_REF_TEXT") or None
         self._model = None
+        self._clone_prompt = None  # (reference identity, VoiceClonePrompt)
         # Serialises both the one-time load and every generate() call: the
         # model is not thread-safe and two concurrent prefetches would other-
         # wise both try to load it onto the GPU.
@@ -87,7 +90,7 @@ class OmniVoiceTts:
                 for k, v in VOICES.items()
             ],
             "loaded": self._model is not None,
-            "cloning": bool(self.reference),
+            "cloning": bool(self.reference) and Path(self.reference).is_file(),
         }
 
     def synthesize(self, text: str, voice: str | None = None) -> dict:
@@ -97,15 +100,18 @@ class OmniVoiceTts:
             raise TtsError("ไม่มีข้อความไทยสำหรับสร้างเสียง")
         if voice not in VOICES:
             raise TtsError(f"ไม่รู้จักเสียง {voice} — เลือกได้: {', '.join(VOICES)}")
-        if voice == "omnivoice:clone" and not self.reference:
+        cloning = voice == "omnivoice:clone"
+        if cloning and not self.reference:
             raise TtsError(
                 "ยังไม่ได้ตั้งไฟล์เสียงตัวอย่าง — ตั้ง UDTH_OMNIVOICE_REF "
                 "ให้ชี้ไปที่ไฟล์เสียง 5-10 วินาทีก่อน"
             )
+        if cloning and not Path(self.reference).is_file():
+            raise TtsError(f"ไม่พบไฟล์เสียงตัวอย่าง {self.reference} — ตรวจ UDTH_OMNIVOICE_REF ใน .env")
 
         # The reference clip is part of the identity of the output, so changing
-        # it must not return the previous voice from the cache.
-        seed = f"{voice}\0{self.reference or ''}\0{text}"
+        # it (even in place) must not return the previous voice from the cache.
+        seed = f"{voice}\0{self._reference_identity() if cloning else ''}\0{text}"
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:24]
         # WAV, not MP3: encoding to MP3 would need an extra dependency, and the
         # file never leaves this machine so the size does not matter.
@@ -120,18 +126,65 @@ class OmniVoiceTts:
 
             model = self._load()
             try:
-                kwargs = {"text": text}
-                if voice == "omnivoice:clone":
-                    kwargs["reference_audio"] = self.reference
-                else:
-                    kwargs["instruct"] = _INSTRUCTIONS[voice]
-                audio = model.generate(**kwargs)
+                audio = model.generate(**self._generate_args(model, text, voice))
+            except TtsError:
+                raise
             except Exception as exc:  # OOM, bad reference clip, model drift
                 raise TtsError(f"OmniVoice สร้างเสียงไม่สำเร็จ: {exc}") from exc
 
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             self._write_wav(audio, output)
             return {"file": filename, "cached": False}
+
+    def _generate_args(self, model, text: str, voice: str) -> dict:
+        """Arguments for model.generate(). Every name must be one generate()
+        declares: it drops unknown ones without a word, which is how a
+        misnamed reference clip once gave every sentence a random voice.
+        tests/test_voices.py checks them against the installed model."""
+        if voice == "omnivoice:clone":
+            return {"text": text, "voice_clone_prompt": self._clone(model)}
+        return {"text": text, "instruct": _INSTRUCTIONS[voice]}
+
+    def _reference_identity(self) -> str:
+        path = Path(self.reference)
+        stat = path.stat()
+        return f"{path.resolve()}\0{stat.st_size}\0{int(stat.st_mtime)}\0{self.reference_text or ''}"
+
+    def _clone(self, model):
+        """The voice of the reference clip, built once and reused for every
+        sentence so the whole lecture is one speaker (called under _lock)."""
+        identity = self._reference_identity()
+        if self._clone_prompt is not None and self._clone_prompt[0] == identity:
+            return self._clone_prompt[1]
+        transcript = self._reference_transcript(model)
+        try:
+            prompt = model.create_voice_clone_prompt(ref_audio=str(self.reference), ref_text=transcript)
+        except Exception as exc:  # unreadable clip, empty after trimming silence
+            raise TtsError(f"อ่านไฟล์เสียงตัวอย่างไม่ได้: {exc}") from exc
+        self._clone_prompt = (identity, prompt)
+        return prompt
+
+    def _reference_transcript(self, model) -> str:
+        """What the clip says: from .env, or transcribed once and kept."""
+        if self.reference_text:
+            return self.reference_text
+        digest = hashlib.sha256(self._reference_identity().encode("utf-8")).hexdigest()[:24]
+        kept = self.cache_dir / f"ref-{digest}.txt"
+        if kept.is_file():
+            return kept.read_text(encoding="utf-8")
+        print("  กำลังถอดความไฟล์เสียงตัวอย่างครั้งแรก (Whisper) ...", flush=True)
+        try:
+            if getattr(model, "_asr_pipe", None) is None:
+                model.load_asr_model()
+            text = model.transcribe(str(self.reference))
+        except Exception as exc:
+            raise TtsError(
+                "ถอดความไฟล์เสียงตัวอย่างไม่สำเร็จ — ใส่ข้อความที่พูดในไฟล์ไว้ที่ "
+                f"UDTH_OMNIVOICE_REF_TEXT ใน .env แทนได้ ({exc})"
+            ) from exc
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        kept.write_text(text, encoding="utf-8")
+        return text
 
     @property
     def loaded(self) -> bool:

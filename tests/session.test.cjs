@@ -42,7 +42,7 @@ function controllableApi({engines = [], warmup = () => ({state: 'none'})} = {}) 
 const silentVoice = () => ({canTranslate: false, prepare: async () => ({}), speak: () => ({done: new Promise(() => {}), stop() {}})});
 const translatingVoice = () => ({...silentVoice(), canTranslate: true});
 
-function setup({dub = {}, transcript = {ok: true, cues, sourceLang: 'EN'}, api, voice = silentVoice()} = {}) {
+function setup({dub = {}, transcript = {ok: true, cues, sourceLang: 'EN'}, api, voice = silentVoice(), sleep = () => flush(1)} = {}) {
   const video = fakeVideo();
   const states = [];
   const settings = {v: 2, subtitles: 'both', textSize: 'm',
@@ -55,7 +55,7 @@ function setup({dub = {}, transcript = {ok: true, cues, sourceLang: 'EN'}, api, 
     makeVoice: () => voice,
     onState: (s) => states.push(s),
     pollMs: 1,
-    sleep: () => flush(1),
+    sleep,
   });
   return {session, video, states, settings, last: () => states.at(-1)};
 }
@@ -249,4 +249,101 @@ test('a lecture opened mid-way is translated from where it starts', async () => 
   session.start();
   await flush();
   assert.deepEqual(t.focused, [['job1', 75]]);
+});
+
+// ------------------------------------------------- waiting for the dub's audio
+
+// Timers the test fires by duration, and a voice whose audio arrives on cue.
+function manualClock() {
+  const timers = [];
+  return {
+    sleep: (ms) => new Promise((resolve) => timers.push({ms, resolve})),
+    async fire(ms) { timers.filter((t) => t.ms === ms).forEach((t) => t.resolve()); await flush(); },
+  };
+}
+function slowVoice() {
+  const pending = new Map();
+  return {
+    pending,
+    canTranslate: false,
+    prepare: (words) => new Promise((resolve) => pending.set(words.text, resolve)),
+    speak: () => ({done: new Promise(() => {}), stop() {}}),
+    async arrive(text) { pending.get(text)({}); await flush(); },
+  };
+}
+
+async function dubbedAndPlaying({voice = slowVoice()} = {}) {
+  const t = controllableApi();
+  const clock = manualClock();
+  const ctx = setup({api: t.api, voice, sleep: clock.sleep, dub: {on: true, start: 'accurate', engine: 'edge'}});
+  ctx.session.start();
+  await flush();
+  t.push(rows(20)); await flush(); // the whole lecture is translated
+  assert.equal(ctx.last().phase, 'playing');
+  return {t, clock, voice, ...ctx};
+}
+
+test('after a seek, the video waits for the dub audio there, then plays on by itself', async () => {
+  const {clock, voice, video, last} = await dubbedAndPlaying();
+  video.seek(120.5); // sentence 12 starts at 120
+  await clock.fire(150);
+  assert.equal(last().phase, 'waiting');
+  assert.deepEqual(Object.keys(last().waitingFor), ['speech']);
+  assert.ok(video.paused, 'not playing on in silence');
+  await voice.arrive('ประโยค 12');
+  assert.equal(last().phase, 'playing');
+  assert.equal(video.paused, false, 'resumes on its own');
+});
+
+test('audio that is ready at once does not flash the waiting card', async () => {
+  const {clock, voice, video, states} = await dubbedAndPlaying();
+  const before = states.length;
+  video.seek(120.5);
+  await voice.arrive('ประโยค 12');
+  await clock.fire(150);
+  assert.equal(states.slice(before).some((s) => s.phase === 'waiting'), false);
+});
+
+test('a dub that never answers holds the video only for so long', async () => {
+  const {clock, video, last} = await dubbedAndPlaying();
+  video.seek(120.5);
+  await clock.fire(150);
+  assert.equal(last().phase, 'waiting');
+  await clock.fire(8000);
+  assert.equal(last().phase, 'playing');
+  assert.equal(video.paused, false);
+});
+
+test('seeking a paused video, or after skipping the wait, never holds for the dub', async () => {
+  const {clock, video, session, last} = await dubbedAndPlaying();
+  video.paused = true;
+  video.seek(120.5);
+  await clock.fire(150);
+  assert.equal(last().phase, 'playing');
+  video.paused = false;
+  session.skipWait();
+  video.seek(150.5);
+  await clock.fire(150);
+  assert.equal(last().phase, 'playing');
+});
+
+test('a seek into the middle of a sentence starts the video at that sentence, then waits for its audio', async () => {
+  const {clock, voice, video, last} = await dubbedAndPlaying();
+  video.seek(125); // sentence 12 runs 120-128
+  assert.equal(video.currentTime, 120, 'moved back to where the sentence starts');
+  video.seek(120); // the browser reports the seek we caused
+  assert.equal(video.currentTime, 120, 'and only once');
+  await clock.fire(150);
+  assert.deepEqual(Object.keys(last().waitingFor), ['speech']);
+  await voice.arrive('ประโยค 12');
+  assert.equal(last().phase, 'playing');
+});
+
+test('with the dub off, a seek lands exactly where the viewer chose', async () => {
+  const t = controllableApi();
+  const {session, video} = setup({api: t.api});
+  session.start(); await flush();
+  t.push(rows(20)); await flush();
+  video.seek(125);
+  assert.equal(video.currentTime, 125);
 });

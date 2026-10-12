@@ -29,6 +29,103 @@ class OmniVoiceInstructTests(unittest.TestCase):
         self.assertEqual(presets, set(omnivoice_tts._INSTRUCTIONS))
 
 
+class FakeOmniVoice:
+    """Stands in for the model: records what it is asked, makes no sound."""
+
+    def __init__(self):
+        self.generated, self.prompts, self.transcribed = [], [], 0
+        self._asr_pipe = None
+
+    def create_voice_clone_prompt(self, ref_audio, ref_text=None):
+        self.prompts.append((ref_audio, ref_text))
+        return f"prompt-{len(self.prompts)}"
+
+    def load_asr_model(self):
+        self._asr_pipe = object()
+
+    def transcribe(self, audio):
+        self.transcribed += 1
+        return "สวัสดีครับ นี่คือเสียงของผม"
+
+    def generate(self, **kwargs):
+        self.generated.append(kwargs)
+        return [[0.0]]
+
+
+class OmniVoiceCloneTests(unittest.TestCase):
+    """Cloning: one speaker for the whole lecture, from the reference clip."""
+
+    def engine(self, cache: Path, reference: Path | None, text: str | None = None):
+        engine = omnivoice_tts.OmniVoiceTts(cache)
+        engine.reference = str(reference) if reference else None
+        engine.reference_text = text
+        model = FakeOmniVoice()
+        engine._load = lambda: model
+        engine._write_wav = lambda audio, output: output.write_bytes(b"RIFF")
+        return engine, model
+
+    def test_every_sentence_uses_the_same_voice_from_the_clip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "me.wav"
+            clip.write_bytes(b"clip")
+            engine, model = self.engine(Path(tmp), clip, text="สวัสดีครับ")
+            engine.synthesize("ประโยคแรก", "omnivoice:clone")
+            engine.synthesize("ประโยคที่สอง", "omnivoice:clone")
+        self.assertEqual(model.prompts, [(str(clip), "สวัสดีครับ")], "the voice is built once")
+        self.assertEqual([g["voice_clone_prompt"] for g in model.generated], ["prompt-1", "prompt-1"])
+
+    def test_only_names_the_model_declares_are_passed(self):
+        # generate() silently drops names it does not know; a misnamed
+        # reference clip was dropped that way and every sentence got a random voice.
+        try:
+            import inspect
+
+            from omnivoice.models.omnivoice import OmniVoice
+        except Exception as exc:  # omnivoice is an optional GPU extra
+            self.skipTest(f"omnivoice not installed: {exc}")
+        declared = set(inspect.signature(OmniVoice.generate).parameters) - {"self", "kwargs"}
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "me.wav"
+            clip.write_bytes(b"clip")
+            engine, model = self.engine(Path(tmp), clip, text="สวัสดีครับ")
+            for voice in omnivoice_tts.VOICES:
+                with self.subTest(voice=voice):
+                    self.assertLessEqual(set(engine._generate_args(model, "ทดสอบ", voice)), declared)
+
+    def test_without_a_transcript_the_clip_is_transcribed_once_and_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "me.wav"
+            clip.write_bytes(b"clip")
+            first, model1 = self.engine(Path(tmp), clip)
+            first.synthesize("ประโยคแรก", "omnivoice:clone")
+            second, model2 = self.engine(Path(tmp), clip)  # a server restart
+            second.synthesize("ประโยคที่สอง", "omnivoice:clone")
+        self.assertEqual((model1.transcribed, model2.transcribed), (1, 0))
+        self.assertEqual(model2.prompts[0][1], "สวัสดีครับ นี่คือเสียงของผม")
+
+    def test_a_missing_clip_is_named_rather_than_voiced_at_random(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine, model = self.engine(Path(tmp), Path(tmp) / "gone.wav")
+            with self.assertRaises(omnivoice_tts.TtsError) as caught:
+                engine.synthesize("ประโยค", "omnivoice:clone")
+        self.assertIn("gone.wav", str(caught.exception))
+        self.assertEqual(model.generated, [])
+
+    def test_a_new_clip_in_the_same_place_is_not_answered_from_the_cache(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clip = Path(tmp) / "me.wav"
+            clip.write_bytes(b"clip")
+            engine, model = self.engine(Path(tmp), clip, text="สวัสดีครับ")
+            engine.synthesize("ประโยคเดิม", "omnivoice:clone")
+            clip.write_bytes(b"a different speaker")
+            os.utime(clip, (1, 1))
+            result = engine.synthesize("ประโยคเดิม", "omnivoice:clone")
+        self.assertFalse(result["cached"])
+        self.assertEqual(len(model.prompts), 2, "the new clip is a new voice")
+
+
 class LabelTranslationTests(unittest.TestCase):
     """The extension shows engine and voice names in English too; its table
     (SERVER_LABELS_EN in extension/core/i18n.js) must list exactly the Thai

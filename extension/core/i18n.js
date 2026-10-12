@@ -135,6 +135,8 @@
     "โหลดเสียงพากย์ {engine} ขึ้นการ์ดจอ": "Loading the {engine} voice onto the GPU",
     "กำลังแปลช่วงที่คุณกรอไป ...": "Translating the part you skipped to ...",
     "กำลังเตรียมซับและเสียงพากย์ ...": "Preparing subtitles and dubbing ...",
+    "กำลังเตรียมเสียงพากย์ช่วงนี้ ...": "Preparing the dub for this part ...",
+    "วิดีโอจะเล่นต่อเองในอีกไม่กี่วินาที": "The video resumes by itself in a few seconds",
     "กำลังแปลเป็นไทย ...": "Translating into Thai ...",
     "กำลังโหลดเสียงพากย์ ...": "Loading the dub voice ...",
     "AI กำลังแปลช่วงนี้ก่อนส่วนอื่น วิดีโอจะเล่นต่อเองเมื่อพร้อม หรือกดดูต่อโดยไม่รอได้":
