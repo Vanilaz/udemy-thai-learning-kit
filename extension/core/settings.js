@@ -31,7 +31,7 @@
       start: "instant", // "instant": play now, refine as AI text arrives | "accurate": wait for AI text
       volume: 1,
       sourceVolume: 0.15, // the instructor, under the dub
-      maxRate: 1.6, // fastest a line may be sped up to fit its slot
+      maxRate: 1.85, // fastest a line may be sped up to fit its slot
     }),
   });
 
@@ -59,7 +59,7 @@
         start: oneOf(d.start, ["instant", "accurate"], D.start),
         volume: clamp(d.volume, 0, 1, D.volume),
         sourceVolume: clamp(d.sourceVolume, 0, 1, D.sourceVolume),
-        maxRate: clamp(d.maxRate, 1, 2, D.maxRate),
+        maxRate: clamp(d.maxRate, 1, 2.5, D.maxRate),
       },
     };
   }

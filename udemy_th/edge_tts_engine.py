@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import threading
 from pathlib import Path
 
@@ -60,7 +61,8 @@ class EdgeTts:
         if voice not in VOICES:
             raise TtsError(f"ไม่รู้จักเสียง {voice} — เลือกได้: {', '.join(VOICES)}")
 
-        digest = hashlib.sha256(f"{voice}\0{text}".encode("utf-8")).hexdigest()[:24]
+        rate = os.environ.get("UDTH_TTS_RATE", "+10%").strip() or "+10%"
+        digest = hashlib.sha256(f"{voice}\0{rate}\0{text}".encode("utf-8")).hexdigest()[:24]
         filename = f"{digest}.mp3"
         output = self.cache_dir / filename
         if output.exists() and output.stat().st_size:
@@ -74,7 +76,7 @@ class EdgeTts:
 
             edge_tts = self._module()
             try:
-                audio = asyncio.run(_synthesize(edge_tts, text, voice))
+                audio = asyncio.run(_synthesize(edge_tts, text, voice, rate))
             except TtsError:
                 raise
             except Exception as exc:  # network, endpoint drift, throttling
@@ -98,10 +100,10 @@ class EdgeTts:
         return edge_tts
 
 
-async def _synthesize(edge_tts, text: str, voice: str) -> bytes:
+async def _synthesize(edge_tts, text: str, voice: str, rate: str = "+10%") -> bytes:
     """Collect the streamed audio chunks into one MP3."""
     chunks: list[bytes] = []
-    async for chunk in edge_tts.Communicate(text, voice).stream():
+    async for chunk in edge_tts.Communicate(text, voice, rate=rate).stream():
         if chunk["type"] == "audio":
             chunks.append(chunk["data"])
     return b"".join(chunks)

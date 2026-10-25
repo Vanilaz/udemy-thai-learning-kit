@@ -16,9 +16,9 @@
 (() => {
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
 
-  const PREFETCH_AHEAD = 4; // sentences prepared beyond the current one
-  const LATE_TOLERANCE = 2.5; // seconds past its end before a line is dropped
-  const START_LEAD = 0.25; // start this early: timeupdate fires ~4x a second
+  const PREFETCH_AHEAD = 8; // sentences prepared beyond the current one
+  const LATE_TOLERANCE = 1.0; // seconds past its end before a line is dropped
+  const START_LEAD = 0.35; // start this early: timeupdate fires ~4x a second
   const STUCK_MS = 45000; // ceiling before a line has reported its length
   // After a seek, a sentence already this far under way is left to the
   // instructor: starting it from the top would say what is already past

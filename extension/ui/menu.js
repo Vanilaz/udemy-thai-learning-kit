@@ -104,7 +104,7 @@
       `<label class="udth-field"><span>${t("ความดังเสียงผู้สอน")}</span>` +
       '<input type="range" min="0" max="1" step="0.05" data-udth="sourceVolume"><output data-udth="sourceVolumeOut"></output></label>' +
       `<label class="udth-field"><span>${t("เร่งเสียงพากย์ได้สูงสุด")}</span>` +
-      '<input type="range" min="1" max="2" step="0.05" data-udth="maxRate"><output data-udth="maxRateOut"></output></label>' +
+      '<input type="range" min="1" max="2.5" step="0.05" data-udth="maxRate"><output data-udth="maxRateOut"></output></label>' +
       "</div></details>" +
       '<div class="udth-menu-actions">' +
       '<button type="button" class="udth-btn" data-udth="retry">' +
@@ -436,7 +436,7 @@
       $("sourceVolume").style.setProperty("--val", srcPct);
       $("sourceVolumeOut").value = srcPct;
 
-      const ratePct = `${Math.round((dub.maxRate - 1) * 100)}%`;
+      const ratePct = `${Math.round(((dub.maxRate - 1) / 1.5) * 100)}%`;
       $("maxRate").value = String(dub.maxRate);
       $("maxRate").style.setProperty("--val", ratePct);
       $("maxRateOut").value = `${dub.maxRate.toFixed(2)}x`;
