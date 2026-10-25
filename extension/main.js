@@ -62,12 +62,14 @@
   let engines = [];
   let serverIssue = "";
   let serverVersion = "";
+  let serverA100 = false;
 
   async function refreshEngines() {
     try {
       const health = await api.health();
       engines = health.engines;
       serverVersion = health.version;
+      serverA100 = Boolean(health.a100);
       serverIssue = "";
       // A server left running from an older version behaves differently, and
       // that looked exactly like a bug in this version. Name it instead.
@@ -82,6 +84,7 @@
       }
     } catch (error) {
       engines = [];
+      serverA100 = false;
       serverIssue = error.message;
     }
   }
@@ -142,6 +145,7 @@
   const page = {
     key: null,
     generation: 0,
+    described: null,
     session: null,
     video: null,
     overlay: null,
@@ -157,7 +161,8 @@
     status: "idle", quizMap: null, quizObserver: null, assignmentObserver: null, generation: 0,
     batch: { preparing: false, timer: null, total: 0, label: "" },
     get enabled() {
-      return store.get() ? store.get().subtitles !== "off" : true;
+      const s = store.get();
+      return s ? Boolean(s.active && s.subtitles !== "off") : false;
     },
   };
 
@@ -228,6 +233,12 @@
     const settings = store.get();
     if (state.phase === "waiting") {
       gate.show(waitingView(state.waitingFor));
+    } else if (state.phase === "loading") {
+      gate.show({
+        title: t("กำลังแปลเป็นไทย ..."),
+        detail: t("กำลังตรวจคำบรรยายของบทนี้ ..."),
+        skippable: false,
+      });
     } else {
       gate.hide();
     }
@@ -246,7 +257,7 @@
           );
         }
       }
-      page.overlay.hideNative(state.phase === "playing" && settings.subtitles !== "off");
+      page.overlay.hideNative(Boolean(settings.active && state.phase === "playing" && settings.subtitles !== "off"));
     }
     if (page.menu) page.menu.render();
   }
@@ -254,29 +265,60 @@
   function drawCaption() {
     if (!page.session || !page.overlay || page.state.phase !== "playing") return;
     const settings = store.get();
+    if (!settings.active) return;
     page.overlay.caption(page.session.captionAt(page.video.currentTime), settings);
   }
 
   // ------------------------------------------------------------ lifecycle
 
-  function teardown() {
-    pagesState.generation += 1;
+  function stopVideoSession() {
     if (page.session) page.session.dispose();
     page.session = null;
+    page.state = { phase: "idle" };
+    page.announcedReady = false;
+    gate.hide();
+    if (page.overlay) {
+      page.overlay.clear();
+      page.overlay.hideNative(false);
+    }
+    if (page.menu) page.menu.render();
+  }
+
+  function teardown() {
+    pagesState.generation += 1;
+    stopVideoSession();
     if (page.video) page.video.removeEventListener("timeupdate", drawCaption);
     if (page.overlay) page.overlay.dispose();
     if (page.menu) page.menu.dispose();
     page.overlay = null;
     page.menu = null;
     page.video = null;
-    page.state = { phase: "idle" };
-    page.announcedReady = false;
-    gate.hide();
+    page.described = null;
     if (pages) {
       pages.cleanupArticle();
       pages.cleanupQuiz();
       pages.cleanupAssignment();
     }
+  }
+
+  async function startVideoSession(described, generation) {
+    if (!store.get().active || !page.video) return;
+    stopVideoSession();
+    await refreshEngines();
+    if (generation !== page.generation || !store.get().active || !page.video) return;
+    page.session = UDTH.session.createSession({
+      site: { title: () => site.title(), cacheScope: () => site.cacheScope(), cacheId: () => site.cacheId(),
+        transcript: () => site.videoCues(described.payload) },
+      video: page.video,
+      api,
+      settings: store,
+      makeVoice,
+      onState: onSessionState,
+      takeForce: () => takeForceFlag(site.cacheId()),
+      log,
+      debug,
+    });
+    await page.session.start();
   }
 
   async function startVideo(described, generation) {
@@ -293,6 +335,7 @@
       video,
       store,
       engines: () => engines,
+      a100: () => serverA100,
       refreshEngines,
       sourceLang: () => (page.session ? page.session.sourceLang : ""),
       serverIssue: () => serverIssue,
@@ -304,21 +347,14 @@
     page.menu.ensure();
     video.addEventListener("timeupdate", drawCaption);
 
-    await refreshEngines();
-    if (generation !== page.generation) return;
-    page.session = UDTH.session.createSession({
-      site: { title: () => site.title(), cacheScope: () => site.cacheScope(), cacheId: () => site.cacheId(),
-        transcript: () => site.videoCues(described.payload) },
-      video,
-      api,
-      settings: store,
-      makeVoice,
-      onState: onSessionState,
-      takeForce: () => takeForceFlag(site.cacheId()),
-      log,
-      debug,
-    });
-    await page.session.start();
+    if (!store.get().active) {
+      log("ส่วนขยายปิดอยู่ รอผู้ใช้กดเปิด");
+      if (page.overlay) {
+        page.overlay.status(t("ส่วนขยายปิดอยู่ กดสวิตช์ทำงานอัตโนมัติเพื่อเริ่มแปล"), "ok");
+      }
+      return;
+    }
+    await startVideoSession(described, generation);
   }
 
   async function startPage() {
@@ -327,8 +363,9 @@
     pagesState.generation = generation;
     const described = await site.describe();
     if (generation !== page.generation || !described) return;
+    page.described = described;
     if (described.kind === "video") return startVideo(described, generation);
-    if (!pages) return;
+    if (!pages || !store.get().active) return;
     if (described.kind === "quiz") return pages.startQuiz(described.payload);
     if (described.kind === "assignment") return pages.startAssignment(described.payload);
     if (described.kind === "article") return pages.startArticle(described.payload);
@@ -380,7 +417,12 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "getState") {
-      sendResponse({ ...page.state, sourceLang: page.session ? page.session.sourceLang : "", supportsSection: site.supportsSection });
+      sendResponse({
+        ...page.state,
+        active: Boolean(store.get() && store.get().active),
+        sourceLang: page.session ? page.session.sourceLang : "",
+        supportsSection: site.supportsSection,
+      });
       return false;
     }
     if (message.type === "translateSection") {
@@ -402,13 +444,37 @@
   });
 
   store.load().then(() => {
+    let wasActive = store.get().active;
     UDTH.i18n.setLang(store.get().lang);
     store.subscribe((next) => {
       const lang = UDTH.i18n.lang();
       if (UDTH.i18n.setLang(next.lang) !== lang && page.state.phase === "waiting") onSessionState(page.state);
+      const toggledActive = next.active !== wasActive;
+      wasActive = next.active;
+      if (toggledActive) {
+        if (!next.active) {
+          log("ปิดการทำงานของส่วนขยาย");
+          pagesState.generation += 1;
+          stopVideoSession();
+          if (pages) {
+            pages.cleanupArticle();
+            pages.cleanupQuiz();
+            pages.cleanupAssignment();
+          }
+          return;
+        }
+        log("เปิดการทำงานของส่วนขยาย");
+        if (page.described && page.described.kind === "video" && page.video && page.video.isConnected) {
+          startVideoSession(page.described, page.generation).catch((err) => log("ผิดพลาดตอนเปิดการทำงาน", err));
+        } else {
+          page.key = null;
+          startPage().catch((err) => log("ผิดพลาดตอนเปิดการทำงาน", err));
+        }
+        return;
+      }
       if (page.menu) page.menu.render();
       if (page.overlay && page.state.phase === "playing") {
-        page.overlay.hideNative(store.get().subtitles !== "off");
+        page.overlay.hideNative(Boolean(next.active && next.subtitles !== "off"));
         drawCaption();
       }
     });

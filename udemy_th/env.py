@@ -71,6 +71,10 @@ def load(path: Path | None = None) -> list[str]:
     Never raises: a missing file is the normal case, and a malformed one must
     not stop the server from starting with its defaults.
     """
+    # Tests set this: what a machine's own .env points at (a live Colab
+    # tunnel, a real key) must never decide what a test talks to.
+    if os.environ.get("UDTH_NO_DOTENV") and path is None:
+        return []
     target = path or ENV_PATH
     try:
         # utf-8-sig: Notepad is what most people on Windows will edit this

@@ -26,9 +26,15 @@ test('the same line is requested from the server once', async () => {
   await Promise.all([voice.prepare({text: 'สวัสดี', lang: null}), voice.prepare({text: 'สวัสดี', lang: null})]);
   await voice.prepare({text: 'Hola', lang: 'es'});
   assert.deepEqual(requests, [
-    {voice: 'seamless:th', text: 'สวัสดี', lang: null},
-    {voice: 'seamless:th', text: 'Hola', lang: 'es'},
+    {voice: 'seamless:th', text: 'สวัสดี', lang: null, priority: 'ahead'},
+    {voice: 'seamless:th', text: 'Hola', lang: 'es', priority: 'ahead'},
   ]);
+});
+
+test('the line due now is asked for as such, so it jumps the server queue', async () => {
+  const {voice, requests} = setup();
+  await voice.prepare({text: 'ตอนนี้', lang: null}, {urgent: true});
+  assert.equal(requests[0].priority, 'now');
 });
 
 test('a translated line reports the Thai it spoke', async () => {

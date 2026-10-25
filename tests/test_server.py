@@ -20,6 +20,9 @@ class FakeTts:
     def synthesize(self, text, voice, source_lang=None):
         raise TtsError("Unavailable test engine")
 
+    def live(self):
+        return contextlib.nullcontext()
+
 
 class ServerTests(unittest.TestCase):
     def setUp(self):
@@ -117,6 +120,22 @@ class ServerTests(unittest.TestCase):
     def test_audio_path_escape_and_tts_failure(self):
         self.assertEqual(self.request("GET", "/audio/..%2Fsecret.mp3")[0], 404)
         self.assertEqual(self.request("POST", "/tts", {"text": "Test", "voice": "none"})[0], 400)
+
+    def test_clips_are_served_at_one_level_under_a_new_url(self):
+        from tests.test_loudness import level, tone
+
+        (self.root / "audio").mkdir()
+        (self.root / "audio" / "quiet.wav").write_bytes(tone(0.02))
+        conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_port, timeout=3)
+        try:
+            conn.request("GET", "/audio/quiet.wav?v=" + s.AUDIO_REVISION)
+            response = conn.getresponse()
+            body = response.read()
+        finally:
+            conn.close()
+        self.assertEqual(response.status, 200)
+        self.assertAlmostEqual(level(body), s.loudness.TARGET_DBFS, delta=1.0)
+        self.assertEqual(s._audio_url("quiet.wav"), "/audio/quiet.wav?v=" + s.AUDIO_REVISION)
 
     def test_duplicate_queue_and_priority(self):
         key = self.enqueue(batch=True)

@@ -5,7 +5,8 @@
 // sound belongs to the voice it is given:
 //
 //   voice.canTranslate        true if it can speak Thai from the original text
-//   voice.prepare(words)      fetch/decode ahead of time; may return {spokenText}
+//   voice.prepare(words, {urgent})  fetch/decode ahead of time; may return {spokenText}.
+//                             urgent: this line is due now (it jumps the server's queue)
 //   voice.speak(words, opts)  start speaking; returns {done: Promise, stop()}
 //                             opts.fitRate(seconds) -> playback rate to use
 //
@@ -68,12 +69,12 @@
       return null; // nothing trustworthy to say yet
     }
 
-    function prepare(sentence) {
+    function prepare(sentence, urgent = false) {
       const words = wordsFor(sentence);
       if (!words) return null;
       const key = `${words.lang || "th"}|${words.text}`;
       if (!prepared.has(key)) {
-        const ready = Promise.resolve(voice.prepare(words)).then((result) => {
+        const ready = Promise.resolve(voice.prepare(words, { urgent })).then((result) => {
           if (words.lang && result && result.spokenText && timeline.setDraft(sentence.id, result.spokenText)) {
             onDraft(sentence.id);
           }
@@ -89,7 +90,7 @@
     function prefetch(from) {
       const list = timeline.sentences;
       for (let i = from; i < Math.min(list.length, from + 1 + PREFETCH_AHEAD); i += 1) {
-        const plan = prepare(list[i]);
+        const plan = prepare(list[i], i === from);
         if (plan) plan.ready.catch(() => {});
       }
     }

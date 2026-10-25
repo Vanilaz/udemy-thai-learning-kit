@@ -123,23 +123,24 @@ The first time for each lecture takes 30 seconds to 2 minutes to translate. Afte
 
 ### Thai dubbing
 
-Turn on the **dubbing** switch from the panel over the video; choose from 4 engines
+Turn on the **dubbing** switch from the panel over the video; choose from 7 engines
 — **[Full details at docs/voices.md](docs/voices.md)** (Thai)
 
 | Engine | Free? | What you need to set up |
 |---|---|---|
-| **edge** — Microsoft Azure Neural | Unlimited | Just `pip install -r requirements.txt` **(recommended)** |
+| **edge** — Microsoft Azure Neural | Unlimited | Just `pip install -r requirements.txt` **(recommended for non-GPU PCs)** |
 | **windows** — Windows built-in voices | Unlimited | Nothing to set up, but can't be cached |
 | **google** — Chirp 3 HD | 1 million characters/month | A Google Cloud account + service account JSON |
-| **seamless** — Meta SeamlessM4T | Unlimited | GPU + `transformers`, `torch`, `soundfile` (a dubbing model in the style of Facebook Reels) |
-| **omnivoice** — runs locally | Unlimited | GPU + `pip install omnivoice soundfile` |
+| **thonburian** — ThonburianTTS (megaF5) | Unlimited | **Colab A100** (`colab/hongrian_voice_a100.ipynb`) or local GPU + `flowtts` **(most natural Thai prosody + voice cloning)** |
+| **openjai** — OpenJaiTTS (v1.0) | Unlimited | **Colab A100** or local GPU + `flowtts` (crisp narration + voice cloning) |
+| **seamless** — Meta SeamlessM4T | Unlimited | **Colab A100** or local GPU + `transformers`, `torch`, `soundfile` (supports Instant mode) |
+| **omnivoice** — OmniVoice Thai | Unlimited | **Colab A100** or local GPU + `pip install omnivoice soundfile` (supports voice cloning) |
 
 `edge` and `windows` are **the exact same voice** (Niwat / Premwadee = Azure Neural).
 The only difference is that `windows` generates the voice in the browser, so it can't be cached or pre-fetched.
 If you're watching a long course, use `edge`.
 
-`omnivoice` runs the model locally on your GPU, sending nothing anywhere, and it **can clone the instructor's voice**
-if you give it a 5-10 second sample audio file.
+`thonburian`, `openjai`, `omnivoice`, and `seamless` can run on a **Colab A100 GPU** via [`colab/hongrian_voice_a100.ipynb`](colab/hongrian_voice_a100.ipynb), keeping `agy` as the local subtitle translator while offloading Thai voice synthesis, zero-shot voice cloning (`UDTH_VOICE_REF`), and parallel batch prefetching to A100 (with automatic fallback to `edge` if Colab disconnects).
 
 The list of engines isn't hard-coded into the extension — it's fetched from the server. Install an extra engine on the
 Python side and it just shows up in the options.
@@ -274,6 +275,7 @@ You get files in `out/<course>/<lecture>/`:
 ```bash
 python -m udemy_th go [file|folder]     # does every step in one command (leave empty = clipboard)
 python -m udemy_th docs <file|folder>   # translates attached document files
+python -m udemy_th asr <audio/video>    # transcribes audio/video into a timestamped .srt via Whisper (A100 / local)
 python -m udemy_th serve                # starts the server for the extension to use
 python -m udemy_th glossary             # exports the glossary as Markdown
 python -m udemy_th status               # shows how far each lecture's translation has gotten
@@ -295,6 +297,28 @@ Frequently used options:
 | `--effort low` | Translates faster; use for easy lectures |
 | `build --bom` | Writes `.srt` as UTF-8 with BOM (fixes garbled Thai in VLC) |
 | `go --force` | Retranslates, overwriting the existing output |
+| `asr --lang en` | Specifies the spoken language when transcribing into `.srt` |
+
+### Host Thai voice models and ASR on a Colab A100 (while keeping `agy` for translation)
+
+1. Open [`colab/hongrian_voice_a100.ipynb`](colab/hongrian_voice_a100.ipynb) in Colab, pick an **A100** runtime and Run all
+2. Paste the `UDTH_A100_URL` and `UDTH_A100_KEY` lines it prints at the end of `.env`
+3. (Optional) To clone the instructor's voice, set `UDTH_VOICE_REF=C:\path\to\instructor.wav` in `.env`
+4. Restart `start-server.cmd`; its window shows `เสียงพากย์ GPU : A100 Voice (...) — ถ้าหลุดใช้ Edge สำรองอัตโนมัติ`
+
+The notebook hosts **ThonburianTTS (megaF5)**, **OpenJaiTTS (v1.0)**, **OmniVoice Thai**, **Meta SeamlessM4T-v2-large**, and **Typhoon Whisper Turbo / Whisper Large-v3 Turbo** in one server, and synthesizes translated sentences in parallel on A100 as each `agy` chunk completes.
+
+### Translate with a large model on a Colab A100 (faster, no agy needed)
+
+1. Open [`colab/hongrian_llm.ipynb`](colab/hongrian_llm.ipynb) in Colab, pick an **A100** runtime and Run all
+2. Paste the three `UDTH_LLM_URL / UDTH_LLM_KEY / UDTH_LLM_MODEL` lines it prints at the end of `.env`
+3. Restart `start-server.cmd`; its window shows a "ใช้ LLM ... ก่อน" (using the LLM first) line
+
+The default is SCB 10X's Typhoon 2.1 (Gemma 3) 12B, trained for Thai.
+On an A100 80GB you can switch to Typhoon 2 70B (FP8) in the notebook's first cell.
+
+If Colab disconnects or its URL changes, translation falls back to `agy` chunk by chunk on its own.
+(Colab allows serving like this only on paid plans with compute units left.)
 
 ### Translate with Claude Code instead (free, no API key needed)
 

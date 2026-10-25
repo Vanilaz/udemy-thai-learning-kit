@@ -27,7 +27,7 @@
       }
     }
 
-    function prepare(words) {
+    function prepare(words, { urgent = false } = {}) {
       const key = `${words.lang || "th"}|${words.text}`;
       if (clips.has(key)) {
         // Refresh its place: recently used clips are kept longest.
@@ -36,7 +36,8 @@
         clips.set(key, hit);
         return hit;
       }
-      const clip = api.speak({ voice: voiceId, text: words.text, lang: words.lang }).then(({ audio, spokenText }) => {
+      const request = { voice: voiceId, text: words.text, lang: words.lang, priority: urgent ? "now" : "ahead" };
+      const clip = api.speak(request).then(({ audio, spokenText }) => {
         const url = toUrl(audio);
         // Decoding now means playback starts on the tick it is asked for.
         const element = createAudio();

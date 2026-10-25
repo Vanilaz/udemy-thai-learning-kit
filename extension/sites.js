@@ -174,15 +174,26 @@ function groupCues(cues, targetSeconds = 5, gapSeconds = 0.8) {
 //
 // YouTube answers a caption request without a `pot` value with 200 and an
 // empty body. pot-interceptor.js watches the player's own traffic in the page
-// world and announces any token it sees; this is the isolated-world end of
-// that channel.
+// world and announces any token it sees via DOM dataset and events.
 
-const pot = { token: null };
+const pot = {
+  get token() {
+    return (document.documentElement && document.documentElement.dataset && document.documentElement.dataset.udthPot) || this._token || null;
+  },
+  set token(val) {
+    this._token = val;
+    if (val && document.documentElement && document.documentElement.dataset) {
+      document.documentElement.dataset.udthPot = val;
+    }
+  },
+  _token: null,
+};
+
 window.addEventListener("udth:pot", (event) => {
   pot.token = event.detail;
 });
 
-const POT_WAIT_MS = 4000;
+const POT_WAIT_MS = 3000;
 const POT_POLL_MS = 100;
 const POT_ATTEMPTS = 3;
 
@@ -196,12 +207,6 @@ async function waitForPot(ms) {
 
 // Nothing makes the player mint a token except making it ask for captions, and
 // the only handle on that is its own CC button.
-//
-// It is clicked *twice in a row* rather than once-then-restore. Turning
-// captions on is what triggers the request, so a single click does nothing at
-// all when the viewer already had them on — it just turns them off and waits
-// out the timeout. Two clicks always include an "on" transition and leave the
-// setting exactly as it was found.
 async function ensurePotToken() {
   if (pot.token) return pot.token;
 
@@ -212,8 +217,14 @@ async function ensurePotToken() {
   }
 
   for (let attempt = 1; attempt <= POT_ATTEMPTS && !pot.token; attempt += 1) {
+    const wasPressed = button.getAttribute("aria-pressed") === "true";
     button.click();
-    button.click();
+    await waitForPot(1200);
+    if (!wasPressed && button.getAttribute("aria-pressed") === "true") {
+      // Restore state if CC was originally off so native subtitles do not linger
+      button.click();
+    }
+    if (pot.token) break;
     await waitForPot(POT_WAIT_MS);
     if (!pot.token) log(`ยังไม่ได้ token PoT (ครั้งที่ ${attempt}/${POT_ATTEMPTS})`);
   }
@@ -253,7 +264,21 @@ async function tracksFromHtml(videoId) {
   const player = UDTH.util.extractJson(html, "ytInitialPlayerResponse");
   const list =
     player && player.captions && player.captions.playerCaptionsTracklistRenderer;
-  return (list && list.captionTracks) || [];
+  const tracks = (list && list.captionTracks) || [];
+  const defaultAudioIdx =
+    list && typeof list.defaultAudioTrackIndex === "number" ? list.defaultAudioTrackIndex : -1;
+  const defaultAudio = list && list.audioTracks && list.audioTracks[defaultAudioIdx];
+  const defaultCaptionIdx =
+    defaultAudio && typeof defaultAudio.defaultCaptionTrackIndex === "number"
+      ? defaultAudio.defaultCaptionTrackIndex
+      : -1;
+
+  return tracks.map((t, idx) => ({
+    languageCode: t.languageCode || "",
+    kind: t.kind || "",
+    baseUrl: t.baseUrl || "",
+    isDefault: idx === defaultCaptionIdx || Boolean(t.isDefault),
+  }));
 }
 
 async function fetchCaptionTracks(videoId) {
@@ -269,10 +294,6 @@ async function fetchCaptionTracks(videoId) {
 
 // `c=WEB` identifies the caller as the web player; without it the token is
 // rejected even when it is valid.
-//
-// `fmt` is deliberately left off the first attempt. The endpoint's default is
-// XML, and that is the shape that is actually served in the wild; asking for
-// json3 is an extra condition to fail on for a format we do not need.
 function captionUrl(track, token, { json = false, asr = true } = {}) {
   let url = `${track.baseUrl}&c=WEB`;
   if (json) url += "&fmt=json3";
@@ -283,14 +304,16 @@ function captionUrl(track, token, { json = false, asr = true } = {}) {
 
 // YouTube double-escapes caption text ("&amp;#39;"), so entities are decoded
 // through the DOM rather than by hand.
-const decoder = document.createElement("textarea");
+const decoder = typeof document !== "undefined" && document.createElement ? document.createElement("textarea") : null;
 function unescapeHtml(value) {
+  if (!decoder) return value;
   decoder.innerHTML = value;
   return decoder.value;
 }
 
 // <transcript><text start="12.5" dur="3.2">…</text></transcript>
 function parseTimedTextXml(text) {
+  if (typeof DOMParser === "undefined") return [];
   const doc = new DOMParser().parseFromString(text, "text/xml");
   const cues = [];
   for (const node of doc.getElementsByTagName("text")) {
@@ -324,13 +347,12 @@ async function fetchTimedText(track) {
   const token = await ensurePotToken();
   if (!token) log("ไม่ได้ token PoT — ลองดึงซับแบบไม่มี token");
 
-  // Ordered by how likely each is to be served, not by how nice it is to
-  // parse: XML with the asr marker intact is what the player itself asks for.
+  // Ordered by what YouTube web player natively answers: json3 with asr marker.
   const attempts = [
-    { json: false, asr: true },
-    { json: false, asr: false },
     { json: true, asr: true },
     { json: true, asr: false },
+    { json: false, asr: true },
+    { json: false, asr: false },
   ];
 
   for (const options of attempts) {
@@ -361,21 +383,32 @@ function pickTrack(tracks, prefix) {
 //
 // Courses are not all English — the same player carries Hindi, Spanish and
 // Portuguese lessons — and demanding English meant refusing to translate any
-// of them. An auto-generated track's languageCode is YouTube's own detection
-// of the spoken language, which is exactly the signal needed.
+// of them.
 function pickSourceTrack(tracks) {
   const usable = tracks.filter((t) => t.baseUrl && !/^th/i.test(t.languageCode || ""));
   if (!usable.length) return null;
 
-  // The auto-generated track is YouTube transcribing the audio, so its
-  // language is the language actually spoken. Translating from that language
-  // — rather than from an English subtitle someone added — keeps the dub and
-  // the subtitles one translation away from the instructor, not two.
-  const asr = usable.find((t) => t.kind === "asr");
-  const spoken = asr ? (asr.languageCode || "").split("-")[0].toLowerCase() : "";
-  const inLang = (t, lang) => (t.languageCode || "").toLowerCase().split("-")[0] === lang;
+  // 1. If YouTube marked a track as default (from defaultCaptionTrackIndex/defaultAudio), use it.
+  const def = usable.find((t) => t.isDefault);
+  if (def) return def;
 
+  const inLang = (t, lang) => (t.languageCode || "").toLowerCase().split("-")[0] === lang;
   const written = usable.filter((t) => t.kind !== "asr");
+  const asrTracks = usable.filter((t) => t.kind === "asr");
+
+  // Determine spoken language from ASR:
+  // If there is only one ASR track, YouTube transcribed that specific spoken audio.
+  // When YouTube provides multilingual ASR tracks (e.g. 14 languages sorted alphabetically),
+  // prefer English as the base transcription unless a human track or default indicates otherwise.
+  let asr = null;
+  if (asrTracks.length === 1) {
+    asr = asrTracks[0];
+  } else if (asrTracks.length > 1) {
+    asr = asrTracks.find((t) => inLang(t, "en")) || asrTracks[0];
+  }
+
+  const spoken = asr ? (asr.languageCode || "").split("-")[0].toLowerCase() : "";
+
   return (
     // A human-written track in the spoken language is the best source there is.
     (spoken && written.find((t) => inLang(t, spoken))) ||
@@ -462,4 +495,4 @@ UDTH.youtube = {
   },
 };
 
-UDTH.isYouTube = /(^|\.)youtube\.com$/.test(location.hostname);
+UDTH.isYouTube = typeof location !== "undefined" && /(^|\.)youtube\.com$/.test(location.hostname);

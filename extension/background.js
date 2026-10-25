@@ -123,12 +123,21 @@ async function youtubeCaptionTracks(tabId) {
 
       const list = response.captions && response.captions.playerCaptionsTracklistRenderer;
       const tracks = (list && list.captionTracks) || [];
+      const defaultAudioIdx =
+        list && typeof list.defaultAudioTrackIndex === "number" ? list.defaultAudioTrackIndex : -1;
+      const defaultAudio = list && list.audioTracks && list.audioTracks[defaultAudioIdx];
+      const defaultCaptionIdx =
+        defaultAudio && typeof defaultAudio.defaultCaptionTrackIndex === "number"
+          ? defaultAudio.defaultCaptionTrackIndex
+          : -1;
+
       // Only plain serialisable fields cross the world boundary.
       return {
-        tracks: tracks.map((t) => ({
+        tracks: tracks.map((t, idx) => ({
           languageCode: t.languageCode || "",
           kind: t.kind || "",
           baseUrl: t.baseUrl || "",
+          isDefault: idx === defaultCaptionIdx || Boolean(t.isDefault),
         })),
       };
     },

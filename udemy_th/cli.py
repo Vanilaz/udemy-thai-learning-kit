@@ -123,6 +123,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("status", help="ดูสถานะบทเรียนทั้งหมด")
 
+    p_asr = sub.add_parser("asr", help="ถอดเสียงไฟล์วิดีโอ/เสียงเป็นซับ (.srt) ด้วย Whisper บน A100 หรือในเครื่อง")
+    p_asr.add_argument("source", type=Path, help="ไฟล์เสียงหรือวิดีโอ (.wav/.mp3/.mp4)")
+    p_asr.add_argument("--lang", default=None, help="รหัสภาษาต้นฉบับ เช่น en, th, es (เว้นว่าง = ตรวจเอง)")
+    p_asr.add_argument("--out", type=Path, default=None, help="ไฟล์ผลลัพธ์ .srt (ค่าปริยาย: ชื่อเดียวกับไฟล์ต้นทาง)")
+
     args = parser.parse_args(argv)
     glossary = Glossary(GLOSSARY_PATH)
 
@@ -143,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_serve(args)
         if args.command == "status":
             return _cmd_status()
+        if args.command == "asr":
+            return _cmd_asr(args)
     except (BuildError, RuntimeError, ValueError) as exc:
         print(f"ผิดพลาด: {exc}", file=sys.stderr)
         return 1
@@ -389,6 +396,8 @@ def _serve_engine(requested: str | None) -> str:
         find_agy()
         return "agy"
     except AgyNotFound:
+        if os.environ.get("UDTH_LLM_URL"):
+            return "agy"  # the LLM translates; agy is only its (missing) fallback
         if os.environ.get("ANTHROPIC_API_KEY"):
             print("  ไม่พบ agy CLI — ใช้ Claude (ANTHROPIC_API_KEY) แปลแทน", flush=True)
             return "claude"
@@ -443,4 +452,21 @@ def _cmd_status() -> int:
     width = max(len(name) for name, _ in rows)
     for name, state in rows:
         print(f"  {name.ljust(width)}  {state}")
+    return 0
+
+
+def _cmd_asr(args) -> int:
+    from .asr import transcribe_file
+    from .models import Segment
+    from .srt import write_srt
+
+    result = transcribe_file(args.source, lang=args.lang, timestamps=True, cache_dir=ROOT / "cache")
+    cues = result.get("cues") or []
+    segments = [
+        Segment(id=i, text=c["text"], start=float(c["start"]), end=float(c["end"]))
+        for i, c in enumerate(cues, start=1)
+    ]
+    out_path = args.out or args.source.with_suffix(".srt")
+    write_srt(segments, out_path, use_thai=False)
+    print(f"ถอดเสียงเสร็จ ({result.get('lang', '?')}): {len(segments)} บรรทัด -> {out_path}")
     return 0

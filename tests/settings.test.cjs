@@ -22,11 +22,19 @@ function memoryStorage(initial = {}) {
   };
 }
 
-test('a fresh install shows Thai with the original, and dubbing starts off', async () => {
+test('a fresh install starts paused (active: false), shows Thai with the original when turned on, and dubbing starts off', async () => {
   const settings = await createSettingsStore(memoryStorage()).load();
+  assert.equal(settings.active, false);
   assert.equal(settings.subtitles, 'both');
   assert.equal(settings.dub.on, false);
   assert.equal(settings.dub.voice, '', 'no voice pinned: the engine picks its first');
+});
+
+test('the master power switch can be turned on and off', async () => {
+  const store = createSettingsStore(memoryStorage());
+  assert.equal((await store.load()).active, false);
+  assert.equal((await store.save({active: true})).active, true);
+  assert.equal((await store.save({active: false})).active, false);
 });
 
 test('settings saved by the old version carry over', async () => {
@@ -36,7 +44,7 @@ test('settings saved by the old version carry over', async () => {
   });
   const store = createSettingsStore(mem);
   assert.deepEqual(await store.load(), {
-    v: 2, subtitles: 'th', textSize: 'l', lang: 'th',
+    v: 2, active: true, subtitles: 'th', textSize: 'l', lang: 'th',
     dub: {on: true, engine: 'seamless', voice: 'seamless:th', start: 'accurate', volume: 0.8, sourceVolume: 0.3, maxRate: 1.4},
   });
   assert.ok(!('dualMode' in mem.data()), 'old keys are removed once migrated');
@@ -45,7 +53,9 @@ test('settings saved by the old version carry over', async () => {
 
 test('subtitles switched off in the old version stay off', async () => {
   const store = createSettingsStore(memoryStorage({enabled: false, dualMode: true}));
-  assert.equal((await store.load()).subtitles, 'off');
+  const loaded = await store.load();
+  assert.equal(loaded.active, false);
+  assert.equal(loaded.subtitles, 'off');
 });
 
 test('a partial update keeps everything else, and nonsense is replaced by defaults', async () => {

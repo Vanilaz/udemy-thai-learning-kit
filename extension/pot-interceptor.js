@@ -27,7 +27,15 @@
     } catch {
       return; // relative or malformed URL — nothing to read
     }
-    if (!token || token === seen) return;
+    if (!token) return;
+    try {
+      if (document.documentElement) {
+        document.documentElement.dataset.udthPot = token;
+      }
+    } catch {
+      /* ignore DOM errors */
+    }
+    if (token === seen) return;
     seen = token;
     window.dispatchEvent(new CustomEvent(EVENT, { detail: token }));
   };

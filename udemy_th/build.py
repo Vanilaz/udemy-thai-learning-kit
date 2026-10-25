@@ -100,6 +100,13 @@ def _split_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def _format_thai_spacing(text: str) -> str:
+    """Ensure spaces between Thai script and Latin/digits, adhering to Thai typography."""
+    text = re.sub(r"([\u0e00-\u0e7f])([A-Za-z0-9])", r"\1 \2", text)
+    text = re.sub(r"([A-Za-z0-9])([\u0e00-\u0e7f])", r"\1 \2", text)
+    return text
+
+
 def _parse_subtitles(block: str) -> dict[int, str]:
     result: dict[int, str] = {}
     current: int | None = None
@@ -107,10 +114,10 @@ def _parse_subtitles(block: str) -> dict[int, str]:
         match = _LINE_ID.match(line)
         if match:
             current = int(match.group(1))
-            result[current] = match.group(2).strip()
+            result[current] = _format_thai_spacing(match.group(2).strip())
         elif current is not None and line.strip():
             # A translation that wrapped onto the next line.
-            result[current] = (result[current] + " " + line.strip()).strip()
+            result[current] = _format_thai_spacing((result[current] + " " + line.strip()).strip())
         else:
             current = None
     return {k: v for k, v in result.items() if v}

@@ -10,13 +10,42 @@
 |---|---|---|---|
 | **edge** | ไม่จำกัด | Azure Neural | `pip install -r requirements.txt` เท่านั้น |
 | **windows** | ไม่จำกัด | เท่ากับ edge | ไม่ต้องเตรียมอะไร แต่ cache ไม่ได้ |
-| **google** | 1 ล้านตัวอักษร/เดือน | สูงสุด | บัญชี Google Cloud + service account |
-| **omnivoice** | ไม่จำกัด | ดี + โคลนเสียงได้ | GPU + `pip install omnivoice soundfile` |
-| **seamless** | ไม่จำกัด | Meta SeamlessM4T (สไตล์ Facebook Reels) | GPU + `pip install transformers soundfile sentencepiece` |
+| **google** | 1 ล้านตัวอักษร/เดือน | สูงสุด (คลาวด์) | บัญชี Google Cloud + service account |
+| **thonburian** | ไม่จำกัด | โคลนเสียงได้ · ใบอนุญาตโมเดลห้ามใช้ทางการค้า | Colab A100 หรือ GPU ในเครื่อง + `flowtts` |
+| **openjai** | ไม่จำกัด | ชัดเจนเป็นธรรมชาติ (v1.0) + โคลนเสียงได้ | Colab A100 หรือ GPU ในเครื่อง + `flowtts` |
+| **omnivoice** | ไม่จำกัด | ดี + โคลนเสียงได้ (600+ ภาษา) | Colab A100 หรือ GPU ในเครื่อง + `pip install omnivoice soundfile` |
+| **seamless** | ไม่จำกัด | Meta SeamlessM4T (สไตล์ Facebook Reels) | Colab A100 หรือ GPU ในเครื่อง + `pip install transformers soundfile sentencepiece` |
 
 ---
 
-## edge — แนะนำสำหรับคอร์สยาว
+## รันโมเดลเสียงไทยและ ASR บน Colab A100 (แนะนำเมื่อไม่มี GPU แรงๆ ในเครื่อง)
+
+ถ้าต้องการให้ **`agy` แปลซับในเครื่องเหมือนเดิม** แต่ให้โมเดลเสียงไทยตัวใหญ่ (**ThonburianTTS megaF5**, **OpenJaiTTS v1.0**, **OmniVoice Thai**, **SeamlessM4T-v2-large**) และโมเดลถอดเสียง **Typhoon Whisper Turbo / Whisper Large-v3 Turbo** ไปรันบน **Colab A100 GPU**:
+
+1. เปิดโน้ตบุ๊ก [`colab/hongrian_voice_a100.ipynb`](../colab/hongrian_voice_a100.ipynb) บน Google Colab เลือก Runtime เป็น **A100 GPU** แล้วกด **Run all**
+2. คัดลอกค่า `UDTH_A100_URL` และ `UDTH_A100_KEY` ที่โน้ตบุ๊กพิมพ์ออกมาไปวางในไฟล์ `.env`
+3. เปิด `start-server.cmd` ใหม่ — เซิร์ฟเวอร์จะส่งงานสังเคราะห์เสียงและถอดเสียงไปที่ A100 อัตโนมัติ พร้อมระบบ **Batch Prefetch** สร้างเสียงพากย์ล่วงหน้าแบบขนานทันทีที่ `agy` แปลซับเสร็จแต่ละท่อน
+4. **Circuit Breaker & Auto-Fallback:** หาก Colab A100 หลุดหรือปิดไปกลางคัน เซิร์ฟเวอร์จะสลับไปใช้เสียงสำรองในเครื่อง (`edge` — Microsoft Azure Neural) ทันทีโดยวิดีโอไม่สะดุด และลองเชื่อม A100 ใหม่อัตโนมัติทุก 60 วินาที
+
+---
+
+## thonburian & openjai — เสียงพากย์ไทย F5-TTS (โคลนเสียงได้)
+
+- **ThonburianTTS (megaF5)** ([`biodatlab/ThonburianTTS`](https://huggingface.co/biodatlab/ThonburianTTS) โดย Looloo Technology, WordSense และ Biomedical and Data Lab (มหิดล)) — F5-TTS ที่ปรับมาเพื่อภาษาไทย โคลนเสียงได้ ใบอนุญาต CC BY-NC-SA 4.0 (ใบอนุญาตโมเดลห้ามใช้ทางการค้า)
+- **OpenJaiTTS (v1.0)** (`OpenJai/OpenJaiTTS-v1.0`) — โมเดล F5-TTS ภาษาไทยที่เน้นความคมชัดของเสียงพูด เหมาะกับบทเรียนบรรยาย
+
+ใช้งานได้ 2 วิธี:
+1. **ผ่าน Colab A100 (แนะนำ):** ตั้งค่า `UDTH_A100_URL` และ `UDTH_A100_KEY` จาก `colab/hongrian_voice_a100.ipynb` ไม่ต้องลงไลบรารีหนักในเครื่อง
+2. **รันบนการ์ดจอในเครื่อง:**
+   ```cmd
+   python -m pip install flowtts soundfile torchaudio
+   ```
+
+ทั้งสองตัวรองรับการ**โคลนเสียงผู้สอนแบบ Zero-shot** เพียงตั้งค่า `UDTH_VOICE_REF=C:\voices\instructor.wav` ใน `.env` แล้วเลือกเสียง **โคลนเสียงผู้สอน (จากไฟล์ตัวอย่าง)** (หากรันผ่าน A100 เซิร์ฟเวอร์จะส่งไฟล์ตัวอย่างขึ้น A100 ครั้งเดียวและใช้ Typhoon Whisper ถอดความเสียงตัวอย่างให้อัตโนมัติ)
+
+---
+
+## edge — แนะนำสำหรับคอร์สยาว (ไม่ต้องใช้ GPU)
 
 ```cmd
 python -m pip install -r requirements.txt
@@ -39,7 +68,7 @@ python -m pip install -r requirements.txt
 ดูบทเดิมซ้ำก็ต้องสังเคราะห์ใหม่ทุกครั้ง และสั่งแปลล่วงหน้าทั้ง Section แล้วเตรียมเสียงรอไว้ไม่ได้
 ถ้าจะดูคอร์สยาวๆ ให้ใช้ `edge` แทน — เสียงเดียวกันแต่ได้ cache
 
-## google — คุณภาพสูงสุด
+## google — คุณภาพสูงสุดบนคลาวด์
 
 ดู [google-cloud-tts.md](google-cloud-tts.md) — ใช้ service account JSON ไม่ใช่ API key
 
@@ -58,23 +87,23 @@ Chirp 3 HD รับข้อความได้ครั้งละ ~900 ไ
 
 ## seamless — Meta SeamlessM4T (พากย์เสียงสไตล์ Facebook Reels)
 
-โมเดล [facebook/hf-seamless-m4t-medium](https://huggingface.co/facebook/hf-seamless-m4t-medium) โดย Meta สำหรับการสังเคราะห์เสียง แปล และพากย์หลายภาษา
+โมเดล [facebook/hf-seamless-m4t-medium](https://huggingface.co/facebook/hf-seamless-m4t-medium) (หรือ `facebook/seamless-m4t-v2-large` บน Colab A100) โดย Meta สำหรับการสังเคราะห์เสียง แปล และพากย์หลายภาษา (รองรับโหมด **เริ่มทันที** แปลและพากย์จากต้นฉบับได้โดยไม่ต้องรอ AI)
 
 ```cmd
 python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 python -m pip install transformers soundfile sentencepiece protobuf
 ```
 
-- รันบน GPU ในเครื่อง 100% ฟรีไม่จำกัด
-- ปรับเปลี่ยนโมเดลได้ผ่าน Environment Variable เช่น:
+- รันบน Colab A100 (ผ่าน `UDTH_A100_URL`) หรือบน GPU ในเครื่อง 100% ฟรีไม่จำกัด
+- ปรับเปลี่ยนโมเดลในเครื่องได้ผ่าน Environment Variable เช่น:
   ```cmd
   set UDTH_SEAMLESS_MODEL=facebook/seamless-m4t-v2-large
   ```
-  (แนะนำโมเดล `v2-large` สำหรับการ์ดจอ VRAM 12GB+ เช่น RTX 4080 / 4090)
+  (แนะนำโมเดล `v2-large` สำหรับ Colab A100 หรือการ์ดจอ VRAM 12GB+ เช่น RTX 4080 / 4090)
 
 ---
 
-## omnivoice — รันในเครื่อง โคลนเสียงผู้สอนได้
+## omnivoice — รันบน A100 หรือในเครื่อง โคลนเสียงผู้สอนได้
 
 โมเดล [hotdogs/omnivoice-thai](https://huggingface.co/hotdogs/omnivoice-thai) (Apache-2.0)
 ขนาด 0.6B fine-tune จาก [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice)
@@ -83,21 +112,22 @@ python -m pip install transformers soundfile sentencepiece protobuf
 python -m pip install omnivoice soundfile
 ```
 
-เหมาะกับเครื่องที่มีการ์ดจอ — RTF ที่รายงานไว้คือ 0.025 (เร็วกว่าเวลาจริงราว 40 เท่า)
-บทเรียนหนึ่งชั่วโมงจึงใช้เวลาสร้างเสียงระดับสิบวินาที และไม่ส่งข้อมูลออกนอกเครื่องเลย
+เหมาะกับ Colab A100 หรือเครื่องที่มีการ์ดจอ — RTF ที่รายงานไว้คือ 0.025 (เร็วกว่าเวลาจริงราว 40 เท่า)
+บทเรียนหนึ่งชั่วโมงจึงใช้เวลาสร้างเสียงระดับสิบวินาที
 
 โมเดลถูกโหลดตอนเรียกใช้ครั้งแรก ไม่ใช่ตอนเปิดเซิร์ฟเวอร์ เครื่องที่ไม่มี GPU
-จึงเปิดเซิร์ฟเวอร์ได้ตามปกติ แค่เลือก engine นี้ไม่ได้
+จึงเปิดเซิร์ฟเวอร์ได้ตามปกติ
 
-### โคลนเสียงผู้สอน
+### โคลนเสียงผู้สอน (ใช้ได้กับ ThonburianTTS, OpenJaiTTS และ OmniVoice)
 
-ตัดเสียงผู้สอนมาสัก 5-10 วินาที (ไฟล์ wav หรือ mp3) แล้ว:
+ตัดเสียงผู้สอนมาสัก 5-10 วินาที (ไฟล์ wav หรือ mp3) แล้วตั้งใน `.env`:
 
-```cmd
-set UDTH_OMNIVOICE_REF=C:\voices\instructor.wav
+```ini
+UDTH_VOICE_REF=C:\voices\instructor.wav
 ```
+(หรือใช้ชื่อตัวแปรเดิม `UDTH_OMNIVOICE_REF` ก็ได้)
 
-เปิดเซิร์ฟเวอร์ใหม่ แล้วเลือกเสียง **โคลนเสียงจากไฟล์ตัวอย่าง**
+เปิดเซิร์ฟเวอร์ใหม่ แล้วเลือกเสียง **โคลนเสียงผู้สอน (จากไฟล์ตัวอย่าง)** หรือ **โคลนเสียงจากไฟล์ตัวอย่าง**
 
 ไฟล์ตัวอย่างถูกนับเป็นส่วนหนึ่งของกุญแจ cache ด้วย เปลี่ยนไฟล์แล้วจะไม่ได้เสียงเดิมคืนมา
 

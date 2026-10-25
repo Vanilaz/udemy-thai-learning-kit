@@ -28,11 +28,23 @@ const vtt = (line) => `WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n${line}\n`;
 test('YouTube: the spoken language wins over an added English subtitle', () => {
   const UDTH = loadSites();
   const pick = UDTH.youtube.__pickSourceTrack;
-  const t = (languageCode, kind = '') => ({languageCode, kind, baseUrl: 'u'});
+  const t = (languageCode, kind = '', isDefault = false) => ({languageCode, kind, baseUrl: 'u', isDefault});
   assert.equal(pick([t('en'), t('es'), t('es', 'asr')]).languageCode, 'es');
   assert.equal(pick([t('en'), t('es', 'asr')]).languageCode, 'en', 'human English beats machine Spanish');
   assert.equal(pick([t('hi', 'asr')]).languageCode, 'hi');
   assert.equal(pick([t('th'), t('en', 'asr')]).languageCode, 'en', 'never translate from Thai');
+  // Multilingual ASR tracks (e.g. YouTube auto-dubbing / multi-ASR tracks alphabetically starting with ar)
+  assert.equal(
+    pick([t('ar', 'asr'), t('bn', 'asr'), t('nl', 'asr'), t('en', 'asr')]).languageCode,
+    'en',
+    'English ASR prioritized over arbitrary alphabetical foreign ASR'
+  );
+  // Default track wins if marked by YouTube
+  assert.equal(
+    pick([t('ar', 'asr'), t('bn', 'asr'), t('de', 'asr', true), t('en', 'asr')]).languageCode,
+    'de',
+    'default track wins'
+  );
 });
 
 test('Udemy: a Spanish course is translated from its Spanish captions', async () => {

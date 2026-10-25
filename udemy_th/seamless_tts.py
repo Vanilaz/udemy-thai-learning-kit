@@ -25,6 +25,7 @@ import os
 import threading
 from pathlib import Path
 
+from . import a100_voice
 from .google_tts import TtsError
 
 MODEL_ID = os.environ.get("UDTH_SEAMLESS_MODEL", "facebook/hf-seamless-m4t-medium")
@@ -37,6 +38,7 @@ VOICES = {
 # ISO 639-1 (what YouTube and Udemy report) -> SeamlessM4T text language code.
 # Every target is a language token of the processor's tokenizer (checked by
 # tests/test_voices.py) — e.g. Malay is zlm there, and Sinhala is absent.
+# Written for v2; the v1 checkpoints spell a few codes differently (V1_CODES).
 LANG_CODES = {
     "af": "afr", "ar": "arb", "az": "azj", "bg": "bul", "bn": "ben", "ca": "cat",
     "cs": "ces", "cy": "cym", "da": "dan", "de": "deu", "el": "ell", "en": "eng",
@@ -61,22 +63,40 @@ def tidy_thai(text: str) -> str:
     return (text or "").replace("ํา", "ำ").strip()
 
 
-def seamless_lang(code: str | None) -> str:
-    """'en', 'en_US', 'pt-BR', 'zh-Hant', 'eng' -> Seamless code ('tha' if none).
+# v1 (hf-seamless-m4t-medium / -large) tokens that v2 renamed. Measured on the
+# two tokenizers: Malay is __zsm__ in v1 and __zlm__ in v2; nothing else differs.
+V1_CODES = {"zlm": "zsm"}
+
+
+def is_v2(model_id: str) -> bool:
+    return "v2" in model_id.lower()
+
+
+def seamless_lang(code: str | None, model_id: str | None = None) -> str:
+    """'en', 'en_US', 'pt-BR', 'zh-Hant', 'eng' -> Seamless code ('tha' if none),
+    spelled the way `model_id` (default: the configured model) expects.
 
     Raises TtsError for a language the model cannot read, rather than letting
     it guess and speak nonsense.
     """
+    v2 = is_v2(model_id or MODEL_ID)
+
+    def spelled(seamless_code: str) -> str:
+        return seamless_code if v2 else V1_CODES.get(seamless_code, seamless_code)
+
     raw = (code or "").strip().lower().replace("_", "-")
     if not raw:
         return "tha"
     if raw in TRADITIONAL_CHINESE:
         return "cmn_Hant"
-    if raw in LANG_CODES.values() or raw == "cmn_hant":
-        return "cmn_Hant" if raw == "cmn_hant" else raw
+    if raw == "cmn_hant":
+        return "cmn_Hant"
+    v1_names = {v: k for k, v in V1_CODES.items()}
+    if raw in LANG_CODES.values() or raw in v1_names:
+        return spelled(v1_names.get(raw, raw))
     primary = raw.split("-")[0]
     if primary in LANG_CODES:
-        return LANG_CODES[primary]
+        return spelled(LANG_CODES[primary])
     raise TtsError(f"Seamless แปลจากภาษา {code!r} ไม่ได้")
 
 
@@ -95,6 +115,18 @@ class SeamlessTts:
         self._device = None
 
     def status(self) -> dict:
+        if a100_voice.configured():
+            return {
+                "configured": True,
+                "ready": True,
+                "error": "",
+                "unlimited": True,
+                "used": None,
+                "limit": None,
+                "device": "Colab A100",
+                "model": MODEL_ID,
+                "remote": a100_voice.base_url(),
+            }
         # Answered on every /health, so it must be cheap: importing torch here
         # took ~10s on a fresh server, longer than the extension waits for
         # /health, and the popup reported the server as unreachable. Check the
@@ -123,10 +155,12 @@ class SeamlessTts:
 
     @property
     def loaded(self) -> bool:
-        return self._model is not None
+        return a100_voice.configured() or self._model is not None
 
     def warm(self) -> None:
         """Load the model now, so the first dubbed sentence does not wait."""
+        if a100_voice.configured():
+            return
         with self._lock:
             self._ensure_loaded()
 
@@ -186,6 +220,25 @@ class SeamlessTts:
         hit = cached()
         if hit:
             return hit
+
+        if a100_voice.is_available():
+            try:
+                remote_res = a100_voice.synthesize_remote(
+                    engine=self.name,
+                    voice=voice or "seamless:th",
+                    text=text,
+                    output_path=out_path,
+                    source_lang=src,
+                )
+                if src != "tha" and remote_res.get("text"):
+                    spoken_clean = tidy_thai(remote_res["text"])
+                    text_path.write_text(spoken_clean, encoding="utf-8")
+                    remote_res["text"] = spoken_clean
+                return remote_res
+            except a100_voice.A100Unavailable as exc:
+                a100_voice.mark_down(str(exc))
+                if importlib.util.find_spec("torch") is None and self._model is None:
+                    raise
 
         with self._lock:
             hit = cached()

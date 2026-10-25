@@ -7,11 +7,15 @@
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
 const hintEl = $("hint");
+const hwBadgeEl = $("hwBadge");
+const activeEl = $("active");
+const activeHintEl = $("activeHint");
 const enabledEl = $("enabled");
 const dualEl = $("dual");
 const dubbingEl = $("dubbing");
 const audioSettingsEl = $("audioSettings");
 const ttsEngineEl = $("ttsEngine");
+const engineTierEl = $("engineTier");
 const voiceEl = $("voice");
 const startFieldEl = $("startField");
 const startHintEl = $("startHint");
@@ -33,12 +37,26 @@ const browserEngine = () => ({ name: "windows", label: t("Windows (เสีย�
 const VIDEO_PAGE = /https:\/\/(www\.)?(udemy\.com\/course\/|youtube\.com\/(watch|shorts))/;
 
 let engines = [];
+let serverA100 = false;
 let shownLang = null;
 let queuePeak = 0;
 let queueBusy = false;
 
 const catalogue = () => [browserEngine(), ...engines.map(UDTH.i18n.localizeEngine)];
 const engineByName = (name) => catalogue().find((e) => e.name === name);
+
+function engineTier(engineName) {
+  if (engineName === "thonburian" || engineName === "openjai") {
+    return { text: t("คลาวด์ A100"), kind: "a100" };
+  }
+  if (engineName === "omnivoice" || engineName === "seamless") {
+    return { text: t("การ์ดจอ"), kind: "gpu" };
+  }
+  if (engineName === "edge") {
+    return { text: t("คลาวด์ฟรี"), kind: "cloud" };
+  }
+  return { text: t("ในเบราว์เซอร์"), kind: "browser" };
+}
 
 function browserVoices() {
   return speechSynthesis
@@ -83,17 +101,32 @@ function applyLang(settings) {
 
 function render(settings) {
   const dub = settings.dub;
+  const isActive = Boolean(settings.active);
+  if (activeEl) activeEl.checked = isActive;
+  if (activeHintEl) {
+    activeHintEl.textContent = isActive
+      ? t("เปิดอยู่ · แปลซับและบทเรียนให้อัตโนมัติ")
+      : t("ปิดอยู่ · กดเพื่อเริ่มแปลบทเรียนนี้");
+  }
   enabledEl.checked = settings.subtitles !== "off";
+  enabledEl.disabled = !isActive;
   dualEl.checked = settings.subtitles === "both";
-  dualEl.disabled = settings.subtitles === "off";
+  dualEl.disabled = !isActive || settings.subtitles === "off";
   dubbingEl.checked = dub.on;
-  audioSettingsEl.hidden = !dub.on;
+  dubbingEl.disabled = !isActive;
+  audioSettingsEl.hidden = !isActive || !dub.on;
 
   const engineOptions = catalogue().map((e) => ({ value: e.name, label: e.ready ? e.label : t("{engine} (ยังไม่พร้อม)", { engine: e.label }) }));
   if (!engineByName(dub.engine)) {
     engineOptions.push({ value: dub.engine, label: t("{engine} (ยังไม่พร้อม)", { engine: dub.engine }) });
   }
   fill(ttsEngineEl, engineOptions, dub.engine);
+
+  if (engineTierEl) {
+    const tier = engineTier(dub.engine);
+    engineTierEl.textContent = tier.text;
+    engineTierEl.dataset.tier = tier.kind;
+  }
 
   const engine = engineByName(dub.engine);
   const voices = dub.engine === "windows" ? browserVoices() : (engine && engine.voices) || [];
@@ -108,10 +141,15 @@ function render(settings) {
       ? t("เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ")
       : t("รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ แม่นที่สุด");
 
+  const dubPct = `${Math.round(dub.volume * 100)}%`;
   dubbingVolumeEl.value = String(dub.volume);
-  dubbingValueEl.value = `${Math.round(dub.volume * 100)}%`;
+  dubbingVolumeEl.style.setProperty("--val", dubPct);
+  dubbingValueEl.value = dubPct;
+
+  const origPct = `${Math.round(dub.sourceVolume * 100)}%`;
   originalAudioVolumeEl.value = String(dub.sourceVolume);
-  originalAudioValueEl.value = `${Math.round(dub.sourceVolume * 100)}%`;
+  originalAudioVolumeEl.style.setProperty("--val", origPct);
+  originalAudioValueEl.value = origPct;
 }
 
 function setStatus(text, ok) {
@@ -124,6 +162,12 @@ async function refreshServer() {
   try {
     const health = await api.health();
     engines = health.engines;
+    serverA100 = Boolean(health.a100);
+    if (hwBadgeEl) {
+      hwBadgeEl.hidden = false;
+      hwBadgeEl.textContent = serverA100 ? t("เชื่อมต่อ A100 แล้ว") : t("โหมดเครื่องตัวเอง");
+      hwBadgeEl.dataset.mode = serverA100 ? "a100" : "local";
+    }
     if (health.version && health.version !== mine) {
       setStatus(
         t("เซิร์ฟเวอร์เป็นเวอร์ชัน {server} แต่ส่วนขยายเป็น {mine} ปิดแล้วเปิด start-server.cmd ใหม่", {
@@ -140,6 +184,8 @@ async function refreshServer() {
     hintEl.textContent = t("เปิดวิดีโอใน Udemy หรือ YouTube ได้เลย ครั้งแรกของแต่ละบทจะใช้เวลาแปลสักครู่");
   } catch (error) {
     engines = [];
+    serverA100 = false;
+    if (hwBadgeEl) hwBadgeEl.hidden = true;
     setStatus(error.message, false);
     hintEl.innerHTML = t("ดับเบิลคลิก <code>start-server.cmd</code> ในโฟลเดอร์โปรเจกต์ แล้วเปิดหน้านี้ใหม่");
   }
@@ -160,6 +206,10 @@ async function refreshLecture() {
     return;
   }
   if (!state || !engines.length) return;
+  if (state.active === false) {
+    setStatus(t("ส่วนขยายปิดอยู่ กดสวิตช์ทำงานอัตโนมัติเพื่อเริ่มแปล"), true);
+    return;
+  }
   const lang = state.sourceLang ? t("{lang} → ไทย", { lang: state.sourceLang.split("-")[0].toUpperCase() }) : "";
   if (state.phase === "playing") {
     setStatus(
@@ -222,6 +272,7 @@ async function refreshQueue() {
 
 // ------------------------------------------------------------------ inputs
 
+if (activeEl) activeEl.addEventListener("change", () => store.save({ active: activeEl.checked }));
 enabledEl.addEventListener("change", () =>
   store.save({ subtitles: enabledEl.checked ? (dualEl.checked ? "both" : "th") : "off" })
 );
@@ -243,6 +294,7 @@ for (const button of document.querySelectorAll("[data-lang]")) {
 retryEl.addEventListener("click", async () => {
   const tab = await activeTab();
   if (!tab || !tab.url) return;
+  if (store.get() && !store.get().active) await store.save({ active: true });
   // Reloading wipes the page's memory, so "ignore the cache" is left in
   // storage, keyed by lecture so it cannot leak into a different one.
   const lecture =
@@ -286,6 +338,7 @@ store.subscribe((settings) => {
   render(settings);
   // Messages already on screen were written in the old language.
   if (relabelled) refreshServer().then(() => refreshLecture());
+  else refreshLecture();
 });
 store.load().then(async (settings) => {
   applyLang(settings);

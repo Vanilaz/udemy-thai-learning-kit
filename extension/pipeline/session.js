@@ -63,6 +63,7 @@
     let seekToken = 0;
     let snappedTo = null; // where we last moved the video ourselves
     const hold = { active: false, wasPlaying: false, onPlay: null };
+    let resuming = false; // the next "play" is our own release, not the viewer
 
     const dub = () => settings.get().dub;
 
@@ -95,8 +96,9 @@
       video.removeEventListener("play", hold.onPlay);
       hold.active = false;
       if (resume && hold.wasPlaying) {
+        resuming = true;
         const played = video.play();
-        if (played && played.catch) played.catch(() => {});
+        if (played && played.catch) played.catch(() => (resuming = false));
       }
     }
 
@@ -220,6 +222,21 @@
         return;
       }
       catchUp(now);
+    }
+
+    // Pressing play is the same moment as a seek for the dub: a seek made
+    // while paused (or a long pause) leaves the line due here not ready, and
+    // the video started without it. Measured on Udemy: 5.5s of silence.
+    // Releasing our own hold plays the video too: that is not the viewer
+    // pressing play, and after a hold that timed out the line is still not
+    // ready, so treating it as one held the video again (seen on Udemy).
+    function onPlayed() {
+      if (resuming) {
+        resuming = false;
+        return;
+      }
+      if (disposed || !timeline || skipped || phase !== "playing" || catchingUp) return;
+      catchUp(video.currentTime || 0);
     }
 
     function catchUp(time) {
@@ -360,6 +377,7 @@
           onSettings(next, before);
         });
         video.addEventListener("seeked", onSeeked);
+        video.addEventListener("play", onPlayed);
         translate(transcript.cues);
         await watchVoice();
         // The translation may already have failed (or finished) meanwhile.
@@ -388,6 +406,7 @@
         voiceToken += 1;
         unsubscribe();
         video.removeEventListener("seeked", onSeeked);
+        video.removeEventListener("play", onPlayed);
         if (dubber) dubber.dispose();
         releaseVideo(false);
       },

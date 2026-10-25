@@ -25,6 +25,7 @@ import os
 import threading
 from pathlib import Path
 
+from . import a100_voice
 from .google_tts import TtsError
 
 MODEL_ID = os.environ.get("UDTH_OMNIVOICE_MODEL", "hotdogs/omnivoice-thai")
@@ -59,8 +60,10 @@ class OmniVoiceTts:
 
     def __init__(self, cache_dir: Path):
         self.cache_dir = cache_dir / "audio"
-        self.reference = os.environ.get("UDTH_OMNIVOICE_REF") or None
-        self.reference_text = os.environ.get("UDTH_OMNIVOICE_REF_TEXT") or None
+        self.reference = os.environ.get("UDTH_OMNIVOICE_REF") or os.environ.get("UDTH_VOICE_REF") or None
+        self.reference_text = (
+            os.environ.get("UDTH_OMNIVOICE_REF_TEXT") or os.environ.get("UDTH_VOICE_REF_TEXT") or None
+        )
         self._model = None
         self._clone_prompt = None  # (reference identity, VoiceClonePrompt)
         # Serialises both the one-time load and every generate() call: the
@@ -69,13 +72,26 @@ class OmniVoiceTts:
         self._lock = threading.Lock()
 
     def status(self) -> dict:
+        if a100_voice.configured():
+            return {
+                "configured": True,
+                "ready": True,
+                "error": "",
+                "unlimited": True,
+                "used": None,
+                "limit": None,
+                "voices": [{"id": k, "label": v} for k, v in VOICES.items()],
+                "loaded": True,
+                "cloning": bool(self.reference) and Path(self.reference).is_file(),
+                "remote": a100_voice.base_url(),
+            }
         # Cheap on purpose — see SeamlessTts.status: importing omnivoice (and
         # torch with it) on every /health made a fresh server look unreachable.
         missing = [m for m in ("omnivoice", "soundfile", "numpy") if importlib.util.find_spec(m) is None]
         if missing:
             return {
                 "configured": False,
-                "error": f"ยังไม่ได้ติดตั้ง {', '.join(missing)} — รัน install.cmd --gpu",
+                "error": f"ยังไม่ได้ติดตั้ง {', '.join(missing)} — รัน install.cmd --gpu หรือตั้ง UDTH_A100_URL",
                 "voices": [],
             }
         return {
@@ -119,6 +135,22 @@ class OmniVoiceTts:
         output = self.cache_dir / filename
         if output.exists() and output.stat().st_size:
             return {"file": filename, "cached": True}
+
+        if a100_voice.is_available():
+            try:
+                return a100_voice.synthesize_remote(
+                    engine=self.name,
+                    voice=voice,
+                    text=text,
+                    output_path=output,
+                    instruct=_INSTRUCTIONS.get(voice),
+                    ref_path=Path(self.reference) if cloning else None,
+                    ref_text=self.reference_text if cloning else None,
+                )
+            except a100_voice.A100Unavailable as exc:
+                a100_voice.mark_down(str(exc))
+                if importlib.util.find_spec("omnivoice") is None and self._model is None:
+                    raise
 
         with self._lock:
             if output.exists() and output.stat().st_size:
@@ -188,10 +220,12 @@ class OmniVoiceTts:
 
     @property
     def loaded(self) -> bool:
-        return self._model is not None
+        return a100_voice.configured() or self._model is not None
 
     def warm(self) -> None:
         """Load the model now, so the first dubbed sentence does not wait ~1min."""
+        if a100_voice.configured():
+            return
         with self._lock:
             self._load()
 

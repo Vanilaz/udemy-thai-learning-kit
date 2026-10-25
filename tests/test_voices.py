@@ -174,16 +174,28 @@ class SeamlessLanguageTests(unittest.TestCase):
             seamless_tts.seamless_lang("qq")
 
     def test_every_mapped_code_is_a_language_the_model_reads(self):
-        try:
-            from transformers import AutoTokenizer
+        # Both generations: v1 and v2 spell Malay differently, and a server
+        # may run v1 locally while a Colab GPU runs v2.
+        from transformers import AutoTokenizer
 
-            tok = AutoTokenizer.from_pretrained(seamless_tts.MODEL_ID, local_files_only=True)
-        except Exception as exc:
-            self.skipTest(f"model tokenizer not available offline: {exc}")
-        vocab = tok.get_vocab()
-        for code in set(seamless_tts.LANG_CODES.values()) | {"cmn_Hant"}:
-            with self.subTest(code=code):
-                self.assertIn(f"__{code}__", vocab)
+        checked = 0
+        for model_id in ("facebook/hf-seamless-m4t-medium", "facebook/seamless-m4t-v2-large"):
+            try:
+                vocab = AutoTokenizer.from_pretrained(model_id, local_files_only=True).get_vocab()
+            except Exception:
+                continue  # not downloaded on this machine
+            checked += 1
+            for primary in set(seamless_tts.LANG_CODES) | {"zh-hant"}:
+                code = seamless_tts.seamless_lang(primary, model_id)
+                with self.subTest(model=model_id, lang=primary):
+                    self.assertIn(f"__{code}__", vocab)
+        if not checked:
+            self.skipTest("no Seamless tokenizer available offline")
+
+    def test_malay_is_spelled_for_the_model_generation(self):
+        self.assertEqual(seamless_tts.seamless_lang("ms", "facebook/hf-seamless-m4t-medium"), "zsm")
+        self.assertEqual(seamless_tts.seamless_lang("ms", "facebook/seamless-m4t-v2-large"), "zlm")
+        self.assertEqual(seamless_tts.seamless_lang("zsm", "facebook/seamless-m4t-v2-large"), "zlm")
 
     def test_thai_keeps_its_old_cache_key(self):
         key = hashlib.sha256(f"seamless:{seamless_tts.MODEL_ID}:สวัสดี".encode("utf-8")).hexdigest()[:24]

@@ -312,6 +312,9 @@ test('a dub that never answers holds the video only for so long', async () => {
   await clock.fire(8000);
   assert.equal(last().phase, 'playing');
   assert.equal(video.paused, false);
+  await clock.fire(150); // our own resume is not the viewer pressing play
+  assert.equal(last().phase, 'playing', 'not held a second time for the same line');
+  assert.equal(video.paused, false);
 });
 
 test('seeking a paused video, or after skipping the wait, never holds for the dub', async () => {
@@ -346,4 +349,20 @@ test('with the dub off, a seek lands exactly where the viewer chose', async () =
   t.push(rows(20)); await flush();
   video.seek(125);
   assert.equal(video.currentTime, 125);
+});
+
+test('pressing play after seeking while paused waits for the dub there too', async () => {
+  const {clock, voice, video, last} = await dubbedAndPlaying();
+  video.paused = true;
+  video.seek(120.5);
+  await clock.fire(150);
+  assert.equal(last().phase, 'playing', 'nothing to hold while paused');
+  video.play(); // the viewer presses play
+  await clock.fire(150);
+  assert.deepEqual(Object.keys(last().waitingFor), ['speech']);
+  assert.ok(video.paused);
+  await voice.arrive('ประโยค 12');
+  await clock.fire(150);
+  assert.equal(last().phase, 'playing', 'our own resume does not hold again');
+  assert.equal(video.paused, false);
 });

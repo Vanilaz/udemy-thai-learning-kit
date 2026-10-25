@@ -69,7 +69,12 @@
       /** Server version and its speech engines (what each can do). */
       async health() {
         const health = await call("GET", "/health", null, { timeoutMs: 3000 });
-        return { version: health.version || "", engines: normalizeEngines(health.voices) };
+        return {
+          version: health.version || "",
+          engines: normalizeEngines(health.voices),
+          a100: Boolean(health.a100),
+          llmEngine: health.engine || "",
+        };
       },
 
       async engines() {
@@ -85,9 +90,11 @@
        * Thai speech for `text`. With `lang` set, `text` is the original and the
        * engine translates it; `spokenText` is then the Thai it said.
        */
-      async speak({ voice, text, lang }) {
+      async speak({ voice, text, lang, priority }) {
         const body = { text, voice };
         if (lang) body.source_lang = lang;
+        // "now": the line the player must say next goes first on a busy GPU.
+        if (priority) body.priority = priority;
         const made = await call("POST", "/tts", body, { timeoutMs: 120000 });
         const audio = await call("GET", made.url, null, { audio: true, timeoutMs: 30000 });
         return { audio, spokenText: made.text || null };

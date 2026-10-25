@@ -289,3 +289,13 @@ test('a stall mid-line stops the voice and says the line again once the video mo
   video.emit('playing'); await flush();
   assert.deepEqual(voice.said.map(s => s.text), ['ประโยคที่ 1', 'ประโยคที่ 2', 'ประโยคที่ 2']);
 });
+
+test('the sentence due now is marked urgent, the ones fetched ahead are not', async () => {
+  const urgency = {};
+  const voice = fakeVoice();
+  const prepare = voice.prepare;
+  voice.prepare = (words, opts) => { urgency[words.text] = Boolean(opts && opts.urgent); return prepare(words); };
+  const {video} = setup({voice});
+  await video.at(0);
+  assert.deepEqual(urgency, {'ประโยคที่ 1': true, 'ประโยคที่ 2': false, 'ประโยคที่ 3': false});
+});

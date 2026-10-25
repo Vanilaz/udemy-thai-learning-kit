@@ -14,18 +14,33 @@
   const segmenter =
     typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter("th", { granularity: "word" }) : null;
 
-  // Thai has no spaces; the browser's own line breaking split words in half
-  // ("ตรวจ" / "สอบ"). One nowrap span per word, a zero-width space between
-  // them as the only place a line may break.
+  function formatThaiSpacing(str) {
+    if (!str) return "";
+    return str
+      .replace(/([\u0E00-\u0E7F])([A-Za-z0-9])/g, "$1 $2")
+      .replace(/([A-Za-z0-9])([\u0E00-\u0E7F])/g, "$1 $2");
+  }
+
+  // Thai has no spaces between words; the browser's own line breaking split words
+  // in half ("ตรวจ" / "สอบ"). One nowrap span per word, a zero-width space between
+  // consecutive Thai words as the only place a line may break, and genuine text
+  // nodes for spaces so English terms and Thai phrases maintain natural spacing.
   function wordSpans(text) {
     const span = document.createElement("span");
-    const words = segmenter ? [...segmenter.segment(text)].map((p) => p.segment) : text.split(/(\s+)/);
+    const formatted = formatThaiSpacing(text);
+    const words = segmenter ? [...segmenter.segment(formatted)].map((p) => p.segment) : formatted.split(/(\s+)/);
     words.filter(Boolean).forEach((word, i) => {
-      if (i) span.appendChild(document.createTextNode("​"));
-      const w = document.createElement("span");
-      w.className = "udth-w";
-      w.textContent = word;
-      span.appendChild(w);
+      if (/^\s+$/.test(word)) {
+        span.appendChild(document.createTextNode(word));
+      } else {
+        if (i && !/^\s+$/.test(words[i - 1])) {
+          span.appendChild(document.createTextNode("\u200B"));
+        }
+        const w = document.createElement("span");
+        w.className = "udth-w";
+        w.textContent = word;
+        span.appendChild(w);
+      }
     });
     return span;
   }
@@ -200,5 +215,6 @@
     };
   }
 
-  UDTH.overlay = { createOverlay };
+  UDTH.overlay = { createOverlay, wordSpans, formatThaiSpacing };
+  if (typeof module !== "undefined") module.exports = UDTH.overlay;
 })();

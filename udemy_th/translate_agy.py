@@ -13,7 +13,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,9 +23,11 @@ from .glossary import Glossary
 from .models import Lesson, Segment
 from .prompts import DOC_OUTPUT_FORMAT, DOC_RULES, OUTPUT_FORMAT, RULES, SYSTEM
 
-# Windows CreateProcess caps the command line at 32,767 characters. Leave room
-# for the executable path and the other flags.
-SAFE_PROMPT_CHARS = 24_000
+# Windows CreateProcess caps the command line at 32,767 characters. Keep prompt
+# safely within model token limits and argument budget to avoid serialization errors.
+SAFE_PROMPT_CHARS = 20_000
+MAX_RETRIES = 3
+INITIAL_BACKOFF = 3.0
 # `agy` gives a print-mode run 5 minutes by default; long lessons need more.
 PRINT_TIMEOUT = "15m"
 TIMEOUT_SECONDS = 1200
@@ -92,8 +96,17 @@ def translate_text(
     mode: str = "subtitle",
     on_chunk: Callable[[int, str], None] | None = None,
     focus: Callable[[], float | None] | None = None,
+    run_chunk: Callable[[str, str], str] | None = None,
+    parallel: int | None = None,
+    chunk_chars: int | None = None,
 ) -> list[str]:
     """Translate a Lesson in memory; return each chunk's raw answer text.
+
+    `run_chunk(prompt, label)` sends one chunk's prompt somewhere and returns
+    the answer text: agy by default, or another model (see translate_llm.py).
+    `parallel` caps how many chunks run at once (MAX_PARALLEL_CHUNKS by default).
+    `chunk_chars` caps the transcript text per chunk, for a model whose context
+    is smaller than what agy's command-line budget would pack.
 
     `focus()` returns where the viewer is watching (seconds), or None. It is
     read before each chunk is started, so a viewer who jumps ahead gets that
@@ -107,9 +120,10 @@ def translate_text(
     and handout prose (where code blocks must survive untranslated).
     Used directly by the local server. `translate()` wraps this for the CLI.
     """
-    agy = find_agy()
+    run = run_chunk or agy_runner(effort, model)
+    workers = parallel or MAX_PARALLEL_CHUNKS
     glossary_block = glossary.as_prompt_block(glossary.relevant_to(lesson.source_text))
-    chunks = _pack(lesson, glossary_block, mode)
+    chunks = _pack(lesson, glossary_block, mode, chunk_chars)
 
     # Chunks are independent: each is rendered with the same glossary block and
     # answers with its own line ids, and nothing is written to disk until every
@@ -121,9 +135,9 @@ def translate_text(
     # exists to stop a batch spawning a dozen agy processes and to keep the
     # shared glossary file from being written concurrently. Neither applies
     # inside a single lecture.
-    if len(chunks) > 1 and MAX_PARALLEL_CHUNKS > 1:
+    if len(chunks) > 1 and workers > 1:
         return _translate_parallel(
-            agy, lesson, chunks, glossary_block, effort, model, on_progress, mode, on_chunk, focus
+            run, lesson, chunks, glossary_block, on_progress, mode, on_chunk, focus, workers
         )
 
     starts = [chunk[0].start for chunk in chunks]
@@ -134,8 +148,8 @@ def translate_text(
         pending.discard(index)
         chunk = chunks[index]
         label = f"[{index + 1}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}"
-        print(f"  {label} — กำลังแปลด้วย agy ...", flush=True)
-        answers[index] = _run_chunk(agy, lesson, chunk, glossary_block, effort, model, mode, label)
+        print(f"  {label} — กำลังแปล ...", flush=True)
+        answers[index] = _answer(run, lesson, chunk, glossary_block, mode, label)
         if on_chunk:
             on_chunk(index, answers[index])
         if on_progress:
@@ -160,21 +174,39 @@ def next_chunk(pending: set[int], starts: list[float | None], focus: float | Non
     return ahead[0] if ahead else ordered[0]
 
 
-def _run_chunk(
-    agy: str,
+def _answer(
+    run: Callable[[str, str], str],
     lesson: Lesson,
     chunk: list[Segment],
     glossary_block: str,
-    effort: str,
-    model: str | None,
     mode: str,
     label: str,
 ) -> str:
-    """One agy invocation. Shared by the serial and parallel paths."""
+    """One chunk, whoever translates it. Shared by the serial and parallel paths."""
+    output = run(_render(lesson, chunk, glossary_block, mode), label).strip()
+    if "## SUBTITLES" not in output:
+        raise RuntimeError(
+            f"คำแปลไม่ตรงรูปแบบที่ {label} — ไม่พบหัวข้อ '## SUBTITLES'\n{output[:400]}"
+        )
+    return output
+
+
+def agy_runner(effort: str = "high", model: str | None = None) -> Callable[[str, str], str]:
+    """Chunks through the agy CLI. agy is looked up on first use, so a setup
+    that translates elsewhere does not need it installed."""
+
+    def run(prompt: str, label: str) -> str:
+        return _run_agy(find_agy(), prompt, effort, model, label)
+
+    return run
+
+
+def _run_agy(agy: str, prompt: str, effort: str, model: str | None, label: str) -> str:
+    """One agy invocation with retry mechanism and isolated execution directory."""
     command = [
         agy,
         "-p",
-        _render(lesson, chunk, glossary_block, mode),
+        prompt,
         "--output-format",
         "text",
         "--effort",
@@ -188,44 +220,82 @@ def _run_chunk(
     if model:
         command += ["--model", model]
 
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=TIMEOUT_SECONDS,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"agy ใช้เวลานานเกิน {TIMEOUT_SECONDS} วินาที ที่ {label}") from exc
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        with tempfile.TemporaryDirectory(prefix="udth_agy_") as tmp_cwd:
+            try:
+                result = subprocess.run(
+                    command,
+                    cwd=tmp_cwd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=TIMEOUT_SECONDS,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                last_error = RuntimeError(f"agy ใช้เวลานานเกิน {TIMEOUT_SECONDS} วินาที ที่ {label}")
+                if attempt < MAX_RETRIES:
+                    backoff = INITIAL_BACKOFF * (2 ** (attempt - 1))
+                    print(
+                        f"  {label} — agy หมดเวลา (ครั้งที่ {attempt}/{MAX_RETRIES}) ลองใหม่ใน {backoff:.0f}s...",
+                        flush=True,
+                    )
+                    time.sleep(backoff)
+                    continue
+                raise last_error from exc
 
-    output = (result.stdout or "").strip()
-    if result.returncode != 0:
-        detail = (result.stderr or "").strip() or output
-        raise RuntimeError(f"agy ล้มเหลว (exit {result.returncode}): {detail[:500]}")
-    if "## SUBTITLES" not in output:
-        detail = output[:400] or (result.stderr or "").strip()[:400]
-        raise RuntimeError(
-            f"agy ตอบไม่ตรงรูปแบบที่ {label} — ไม่พบหัวข้อ '## SUBTITLES'\n{detail}"
-        )
-    return output
+            output = (result.stdout or "").strip()
+            if result.returncode != 0:
+                detail = (result.stderr or "").strip() or output
+                last_error = RuntimeError(f"agy ล้มเหลว (exit {result.returncode}): {detail[:500]}")
+                if attempt < MAX_RETRIES:
+                    backoff = INITIAL_BACKOFF * (2 ** (attempt - 1))
+                    print(
+                        f"  {label} — agy ล้มเหลวชั่วคราว (exit {result.returncode}, ครั้งที่ {attempt}/{MAX_RETRIES}) "
+                        f"ลองใหม่ใน {backoff:.0f}s...",
+                        flush=True,
+                    )
+                    time.sleep(backoff)
+                    continue
+                raise last_error
+
+            if "## SUBTITLES" not in output:
+                detail = output[:400] or (result.stderr or "").strip()[:400]
+                last_error = RuntimeError(
+                    f"agy ตอบไม่ตรงรูปแบบที่ {label} — ไม่พบหัวข้อ '## SUBTITLES'\n{detail}"
+                )
+                if attempt < MAX_RETRIES:
+                    backoff = INITIAL_BACKOFF * (2 ** (attempt - 1))
+                    print(
+                        f"  {label} — agy ตอบไม่ตรงรูปแบบ (ครั้งที่ {attempt}/{MAX_RETRIES}) "
+                        f"ลองใหม่ใน {backoff:.0f}s...",
+                        flush=True,
+                    )
+                    time.sleep(backoff)
+                    continue
+                raise last_error
+
+            return output
+
+    if last_error:
+        raise last_error
+    raise RuntimeError(f"agy ล้มเหลวที่ {label}")
 
 
 def _translate_parallel(
-    agy: str,
+    run: Callable[[str, str], str],
     lesson: Lesson,
     chunks: list[list[Segment]],
     glossary_block: str,
-    effort: str,
-    model: str | None,
     on_progress: Callable[[int, int], None] | None,
     mode: str,
     on_chunk: Callable[[int, str], None] | None = None,
     focus: Callable[[], float | None] | None = None,
+    workers: int = MAX_PARALLEL_CHUNKS,
 ) -> list[str]:
-    workers = min(MAX_PARALLEL_CHUNKS, len(chunks))
+    workers = min(workers, len(chunks))
     print(f"  แปล {len(chunks)} ช่วงพร้อมกัน {workers} ตัว ...", flush=True)
 
     starts = [chunk[0].start for chunk in chunks]
@@ -248,7 +318,7 @@ def _translate_parallel(
             chunk = chunks[index]
             label = f"[{index + 1}/{len(chunks)}] บรรทัด {chunk[0].id}-{chunk[-1].id}"
             try:
-                answer = _run_chunk(agy, lesson, chunk, glossary_block, effort, model, mode, label)
+                answer = _answer(run, lesson, chunk, glossary_block, mode, label)
             except BaseException as exc:  # the first failure fails the lecture
                 with lock:
                     errors.append(exc)
@@ -313,11 +383,14 @@ def _render(
 
 
 def _pack(
-    lesson: Lesson, glossary_block: str, mode: str = "subtitle"
+    lesson: Lesson, glossary_block: str, mode: str = "subtitle", chunk_chars: int | None = None
 ) -> list[list[Segment]]:
-    """Group segments so each rendered prompt stays under the arg-size budget."""
+    """Group segments so each rendered prompt stays under the arg-size budget
+    (and under `chunk_chars` of transcript, when given)."""
     overhead = len(_render(lesson, lesson.segments[:1], glossary_block, mode))
     budget = SAFE_PROMPT_CHARS - overhead
+    if chunk_chars:
+        budget = min(budget, chunk_chars)
     if budget <= 0:
         raise RuntimeError(
             "คลังศัพท์หรือคำสั่งยาวเกินไปจนไม่เหลือที่ให้ transcript — "

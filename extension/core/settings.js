@@ -20,6 +20,7 @@
 
   const DEFAULTS = Object.freeze({
     v: 2,
+    active: false, // master power switch: off until the user turns the extension on
     subtitles: "both", // "off" | "th" | "both" (Thai with the original under it)
     textSize: "m", // "s" | "m" | "l"
     lang: "auto", // interface language: "auto" (follow the browser) | "th" | "en"
@@ -47,6 +48,7 @@
     const D = DEFAULTS.dub;
     return {
       v: 2,
+      active: typeof r.active === "boolean" ? r.active : DEFAULTS.active,
       subtitles: oneOf(r.subtitles, ["off", "th", "both"], DEFAULTS.subtitles),
       textSize: oneOf(r.textSize, ["s", "m", "l"], DEFAULTS.textSize),
       lang: oneOf(r.lang, ["auto", "th", "en"], DEFAULTS.lang),
@@ -65,6 +67,7 @@
   function fromLegacy(old) {
     const subtitles = old.enabled === false ? "off" : old.dualMode === false ? "th" : "both";
     return normalize({
+      active: old.enabled !== false,
       subtitles,
       textSize: old.capSize,
       dub: {

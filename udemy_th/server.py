@@ -39,6 +39,7 @@ from urllib.parse import unquote, urlparse
 from .build import _parse_subtitles, _parse_terms, _split_sections
 from . import __version__
 from .env import ENV_PATH, LOADED as ENV_LOADED
+from . import loudness
 from .glossary import Glossary
 from .models import Lesson, Segment
 from .google_tts import TtsError
@@ -267,7 +268,19 @@ class _Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         if path == "/health":
-            self._send(200, {"ok": True, "version": __version__, "engine": self.engine, "voices": self.tts.catalogue()})
+            from . import a100_voice, asr
+
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "version": __version__,
+                    "engine": self.engine,
+                    "voices": self.tts.catalogue(),
+                    "a100": a100_voice.configured(),
+                    "asr": asr.status(),
+                },
+            )
             return
         if path == "/voices":
             self._send(200, {"engines": self.tts.catalogue()})
@@ -311,7 +324,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         path = self.cache_dir / "audio" / filename
         try:
-            body = path.read_bytes()
+            body = _leveled(path) if suffix == ".wav" else path.read_bytes()
         except FileNotFoundError:
             self._send(404, {"error": "ไม่พบไฟล์เสียง"})
             return
@@ -329,7 +342,7 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         action = re.fullmatch(r"/job/([a-f0-9]{20})/(cancel|retry)", path)
         focus = re.fullmatch(r"/job/([a-f0-9]{20})/focus", path)
-        if path not in ("/translate", "/tts", "/tts/warmup") and not action and not focus:
+        if path not in ("/translate", "/tts", "/tts/warmup", "/tts/batch", "/asr") and not action and not focus:
             self._refuse(404, "not found")
             return
 
@@ -388,6 +401,51 @@ class _Handler(BaseHTTPRequestHandler):
             self._handle_tts(payload)
             return
 
+        if path == "/tts/batch":
+            texts = payload.get("texts")
+            voice = payload.get("voice")
+            if (
+                not isinstance(texts, list)
+                or not 1 <= len(texts) <= 500
+                or not all(isinstance(t, str) for t in texts)
+                or not isinstance(voice, str)
+                or not voice
+            ):
+                self._send(400, {"error": "texts ต้องเป็นรายการข้อความ (1-500) และต้องระบุ voice"})
+                return
+            try:
+                items = [
+                    {**r, "url": _audio_url(r["file"])}
+                    for r in self.tts.prefetch_texts(texts, voice)
+                ]
+            except TtsError as exc:
+                self._send(400, {"error": str(exc)})
+                return
+            self._send(200, {"items": items})
+            return
+
+        if path == "/asr":
+            import base64
+            from . import asr
+
+            audio_b64 = payload.get("audio_b64")
+            lang = payload.get("lang")
+            timestamps = payload.get("timestamps", True)
+            if not isinstance(audio_b64, str) or not audio_b64.strip():
+                self._send(400, {"error": "ต้องส่ง audio_b64 เป็นข้อความ base64"})
+                return
+            if lang is not None and not isinstance(lang, str):
+                self._send(400, {"error": "lang ต้องเป็นข้อความ"})
+                return
+            try:
+                raw_bytes = base64.b64decode(audio_b64)
+                res = asr.transcribe_bytes(raw_bytes, lang=lang, timestamps=bool(timestamps))
+            except (ValueError, TtsError) as exc:
+                self._send(400, {"error": str(exc)})
+                return
+            self._send(200, res)
+            return
+
         cues = payload.get("cues") or []
         try:
             _validate_translation(payload, cues)
@@ -443,11 +501,28 @@ class _Handler(BaseHTTPRequestHandler):
             # an engine that can translate (Seamless T2ST) accepts that.
             source_lang = payload.get("source_lang")
             source_lang = source_lang if isinstance(source_lang, str) and source_lang else None
-            result = self.tts.synthesize(str(payload.get("text") or ""), voice, source_lang)
+            if voice and not source_lang:
+                self.tts.last_voice = voice  # what prefetch should make ahead
+            # "now": the line the player must say next; anything else was asked ahead.
+            from . import a100_voice
+
+            level = a100_voice.NOW if payload.get("priority") == "now" else a100_voice.AHEAD
+            token = a100_voice.priority.set(level)
+            try:
+                with self.tts.live():
+                    result = self.tts.synthesize(str(payload.get("text") or ""), voice, source_lang)
+            finally:
+                a100_voice.priority.reset(token)
         except TtsError as exc:
             self._send(400, {"error": str(exc)})
             return
-        self._send(200, {**result, "url": f"/audio/{result['file']}"})
+        except Exception as exc:  # safety net: never drop the connection without a response
+            import traceback
+
+            traceback.print_exc()
+            self._send(500, {"error": f"สร้างเสียงไม่สำเร็จ (ข้อผิดพลาดภายใน): {exc}"})
+            return
+        self._send(200, {**result, "url": _audio_url(result["file"])})
 
 
 def _validate_translation(payload: dict, cues) -> None:
@@ -655,7 +730,11 @@ def _run_job(
         def publish(_index: int, answer: str) -> None:
             _check_cancelled(key)
             partial.update(_parse_subtitles(_split_sections(answer).get("SUBTITLES", "")))
-            _set_job(key, cues=_render_cues(lesson, partial))
+            rendered = _render_cues(lesson, partial)
+            _set_job(key, cues=rendered)
+            tts_reg = getattr(_Handler, "tts", None)
+            if mode == "subtitle" and hasattr(tts_reg, "prefetch_cues_async"):
+                tts_reg.prefetch_cues_async(rendered)
 
         answers = _translate(lesson, glossary, engine, effort, key, mode, publish)
 
@@ -697,6 +776,9 @@ def _run_job(
             _atomic_json(cache_dir / f"{key}.json", result)
             translated = sum(1 for r in result if r["th"])
             _set_job(key, status="done", cues=result, progress=len(result), missing=0, phase="complete")
+        tts_reg = getattr(_Handler, "tts", None)
+        if mode == "subtitle" and hasattr(tts_reg, "prefetch_cues_async"):
+            tts_reg.prefetch_cues_async(result)
         print(f"  เสร็จ: {title} — แปล {translated}/{len(result)} บรรทัด", flush=True)
 
     except JobCancelled:
@@ -707,6 +789,37 @@ def _run_job(
             return
         traceback.print_exc()
         _set_job(key, status="error", error=str(exc))
+
+
+# Bumped whenever what /audio/ serves for the same file changes: clips are
+# sent as immutable, so the player would otherwise keep the old version.
+AUDIO_REVISION = "2"  # 2: loudness-levelled WAV
+
+
+def _audio_url(filename: str) -> str:
+    return f"/audio/{filename}?v={AUDIO_REVISION}"
+
+
+# The cache keeps what each engine made; the level is evened out on the way
+# to the player (see loudness.py), so clips made before this change are
+# levelled too. Remembered, since the player asks for a line more than once.
+_LEVELED_MAX = 64
+_leveled_cache: dict[tuple[str, float], bytes] = {}
+_leveled_lock = threading.Lock()
+
+
+def _leveled(path: Path) -> bytes:
+    key = (str(path), path.stat().st_mtime)
+    with _leveled_lock:
+        hit = _leveled_cache.get(key)
+    if hit is not None:
+        return hit
+    body = loudness.normalize_wav(path.read_bytes())
+    with _leveled_lock:
+        _leveled_cache[key] = body
+        while len(_leveled_cache) > _LEVELED_MAX:
+            _leveled_cache.pop(next(iter(_leveled_cache)))
+    return body
 
 
 class _Server(ThreadingHTTPServer):
@@ -764,7 +877,8 @@ def _translate(
         # The API path has no per-chunk hook yet, so it publishes nothing early.
         return translate_text(lesson, glossary, mode=mode)
 
-    from .translate_agy import translate_text
+    from . import translate_llm
+    from .translate_agy import agy_runner, translate_text
 
     def on_progress(done: int, total: int) -> None:
         _set_job(key, progress=done, chunks=total)
@@ -772,6 +886,13 @@ def _translate(
     # Never raise the configured effort — a user who asked for "low" meant it.
     if mode == "subtitle" and effort == "high":
         effort = SUBTITLE_EFFORT
+
+    # A model on a rented GPU (UDTH_LLM_URL) translates when it is up; agy
+    # answers any chunk it cannot, so a dropped Colab never stops a lecture.
+    run_chunk, parallel, chunk_chars = None, None, None
+    if translate_llm.configured():
+        run_chunk = translate_llm.with_fallback(translate_llm.runner(), agy_runner(effort))
+        parallel, chunk_chars = translate_llm.PARALLEL, translate_llm.CHUNK_CHARS
 
     return translate_text(
         lesson,
@@ -781,6 +902,9 @@ def _translate(
         mode=mode,
         on_chunk=on_chunk,
         focus=_focus_of(key),
+        run_chunk=run_chunk,
+        parallel=parallel,
+        chunk_chars=chunk_chars,
     )
 
 
@@ -833,6 +957,12 @@ def serve(
     print("=" * 58)
     print(f"  ที่อยู่ : http://{HOST}:{port}")
     print(f"  เครื่องมือแปล : {engine} (แปลพร้อมกัน {WORKER_COUNT} บทเรียน)")
+    from . import a100_voice, translate_llm
+
+    if a100_voice.configured():
+        print(f"  เสียงพากย์ GPU : {a100_voice.describe()} — ถ้าหลุดใช้ Edge สำรองอัตโนมัติ")
+    if translate_llm.configured() and engine != "claude":
+        print(f"  ใช้ {translate_llm.describe()} ก่อน — ถ้าติดต่อไม่ได้ใช้ {engine} แทน")
     print(f"  แคช   : {cache_dir}")
     if ENV_LOADED:
         print(f"  ตั้งค่าจาก : {ENV_PATH} ({', '.join(sorted(ENV_LOADED))})")

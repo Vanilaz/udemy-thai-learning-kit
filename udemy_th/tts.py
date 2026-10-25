@@ -1,4 +1,4 @@
-"""Registry of speech engines, and the routing between them.
+"""Registry of speech engines, routing, A100 auto-fallback, and parallel prefetch.
 
 Adding an engine means writing one class and adding one line to `_build`.
 Nothing else changes: the server asks the registry, and the extension asks the
@@ -20,13 +20,77 @@ installed, so imports belong inside methods, not at module level.
 
 from __future__ import annotations
 
+import contextlib
+import os
+import time
+import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from . import a100_voice
 from .edge_tts_engine import EdgeTts
+from .flow_tts import OpenJaiTts, ThonburianTts
+from .thai_numbers import spell_numbers
 from .google_tts import GoogleTts, TtsError
 from .omnivoice_tts import OmniVoiceTts
 from .seamless_tts import SeamlessTts
+
+# Clips made ahead in the background at once (see prefetch_cues_async). One:
+# the GPU makes one clip at a time, so a second only lengthens the queue a
+# live request waits in.
+PREFETCH_WORKERS = max(1, int(os.environ.get("UDTH_PREFETCH_WORKERS", "1")))
+# Background clips wait while the player is asking for one, and this long
+# after: a seek asks for several lines in a row.
+LIVE_QUIET_SECONDS = 2.0
+
+# Matches extension/core/timeline.js sentence grouping 1-to-1 so server-side
+# parallel prefetch warms the exact sentence strings the browser will request.
+SENTENCE_GAP_SECONDS = 1.2
+MAX_SENTENCE_SECONDS = 14.0
+_ENDS_SENTENCE = re.compile(r'[.!?。！？][")\'\]]?\s*$')
+
+
+def sentences_from_cues(cues: list[dict]) -> list[str]:
+    """Group translated cue rows (`{start, end, en, th}`) into whole Thai sentences
+    using the exact same boundary rules as `extension/core/timeline.js`."""
+    groups: list[dict] = []
+    current: dict | None = None
+    for cue in cues:
+        en = (cue.get("en") or cue.get("text") or "").strip()
+        if not en:
+            continue
+        start = float(cue.get("start") or 0.0)
+        end = float(cue.get("end") or 0.0)
+        breaks = current is not None and (
+            start - current["end"] > SENTENCE_GAP_SECONDS
+            or end - current["start"] > MAX_SENTENCE_SECONDS
+        )
+        if breaks and current is not None:
+            groups.append(current)
+            current = None
+        th = (cue.get("th") or "").strip()
+        if current is not None:
+            current["end"] = end
+            current["parts"].append(th)
+        else:
+            current = {"start": start, "end": end, "parts": [th]}
+        if _ENDS_SENTENCE.search(en):
+            groups.append(current)
+            current = None
+    if current is not None:
+        groups.append(current)
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        parts = group["parts"]
+        if parts and all(parts):
+            sentence = " ".join(parts).strip()
+            if sentence and sentence not in seen:
+                seen.add(sentence)
+                out.append(sentence)
+    return out
 
 
 class TtsRegistry:
@@ -40,9 +104,19 @@ class TtsRegistry:
         self._warm_lock = threading.Lock()
         self._warm_errors: dict[str, str] = {}
         self._warming: set[str] = set()
+        # Background prefetch: one long-lived pool, a memory of what it was
+        # already asked for, and the voice the player last used.
+        self._prefetch_pool = None
+        self._prefetch_lock = threading.Lock()
+        self._prefetch_seen: set[tuple[str, str]] = set()
+        self.last_voice: str | None = None
+        self._live = 0
+        self._live_ended = 0.0
 
     def local_engines(self) -> list[str]:
         """Engines that run a model on this machine (and so need loading)."""
+        if a100_voice.configured():
+            return []
         return [name for name, engine in self._engines.items() if hasattr(engine, "warm")]
 
     def preload(self, setting: str) -> None:
@@ -54,6 +128,8 @@ class TtsRegistry:
         engine when a CUDA GPU is present, "off" loads nothing, or a comma list
         of engine names. Never blocks: the CUDA check alone imports torch.
         """
+        if a100_voice.configured():
+            return
         setting = (setting or "auto").strip().lower()
         if setting in ("off", "none", "0", "no", "false"):
             return
@@ -127,13 +203,14 @@ class TtsRegistry:
     @staticmethod
     def _build(cache_dir: Path) -> list:
         # Order is the order the picker shows them in: free and zero-setup
-        # first, then the one that needs an account, then the one that needs
-        # a GPU.
+        # first, then Google Cloud, then local/A100 GPU models.
         return [
             EdgeTts(cache_dir),
             GoogleTts(cache_dir),
             SeamlessTts(cache_dir),
             OmniVoiceTts(cache_dir),
+            ThonburianTts(cache_dir),
+            OpenJaiTts(cache_dir),
         ]
 
     def engine_for(self, voice: str | None):
@@ -144,16 +221,137 @@ class TtsRegistry:
                 return engine
         raise TtsError(f"ไม่รู้จักเสียง {voice!r}")
 
+    def _fallback_voice(self, voice: str | None) -> str:
+        override = (os.environ.get("UDTH_A100_FALLBACK_VOICE") or "").strip()
+        if override and override in self._engines["edge"].voices:
+            return override
+        if voice and "female" in voice.lower():
+            return "th-TH-PremwadeeNeural"
+        return "th-TH-NiwatNeural"
+
     def synthesize(self, text: str, voice: str | None, source_lang: str | None = None) -> dict:
         engine = self.engine_for(voice)
+        is_non_thai = bool(
+            source_lang and source_lang.lower().replace("_", "-") not in ("th", "th-th", "tha")
+        )
         # Thai is what every engine speaks; anything else must be translated on
         # the way, which only an engine marked `translates` can do. Refusing is
         # better than reading Spanish aloud with a Thai voice.
-        if source_lang and source_lang.lower().replace("_", "-") not in ("th", "th-th", "tha"):
+        if is_non_thai:
             if not getattr(engine, "translates", False):
                 raise TtsError(f"{engine.label} แปลจากภาษาต้นฉบับเองไม่ได้ — ต้องรอคำแปลไทย")
-            return engine.synthesize(text, voice, source_lang)
-        return engine.synthesize(text, voice)
+            try:
+                return engine.synthesize(text, voice, source_lang)
+            except a100_voice.A100Unavailable as exc:
+                raise TtsError(
+                    "เซิร์ฟเวอร์เสียง A100 หลุดการเชื่อมต่อ จึงแปลเสียงสดไม่ได้ชั่วคราว (กำลังรอคำแปลซับจาก agy)"
+                ) from exc
+
+        # Every Thai voice misreads bare digits ("2025" came back as "2005"
+        # from all of them); written as words they read them right.
+        text = spell_numbers(text)
+        try:
+            return engine.synthesize(text, voice)
+        except a100_voice.A100Unavailable:
+            fallback_voice = self._fallback_voice(voice)
+            edge = self._engines["edge"]
+            res = edge.synthesize(text, fallback_voice)
+            return {**res, "fallback": fallback_voice}
+
+    def prefetch_texts(
+        self,
+        texts: list[str],
+        voice: str,
+        parallel: int | None = None,
+    ) -> list[dict]:
+        """Synthesize multiple Thai sentences in parallel (e.g. on Colab A100)."""
+        clean = [" ".join((t or "").split()) for t in texts]
+        clean = [t for t in clean if t]
+        if not clean:
+            return []
+        workers = min(len(clean), max(1, parallel or a100_voice.PREFETCH_PARALLEL))
+        if workers == 1:
+            return [self.synthesize(t, voice) for t in clean]
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="udth-tts-batch") as pool:
+            futures = [pool.submit(self.synthesize, t, voice) for t in clean]
+            return [f.result() for f in futures]
+
+    @contextlib.contextmanager
+    def live(self):
+        """Mark a request the player is waiting on; background clips yield to it.
+
+        Measured on Udemy over the A100: a seek's first line came 26s late and
+        was dropped, because it queued behind clips made ahead that nobody
+        was listening to yet.
+        """
+        with self._prefetch_lock:
+            self._live += 1
+        try:
+            yield
+        finally:
+            with self._prefetch_lock:
+                self._live -= 1
+                self._live_ended = time.monotonic()
+
+    def _wait_for_quiet(self, sleep=time.sleep, now=time.monotonic, limit: float = 120.0) -> None:
+        started = now()
+        while now() - started < limit:
+            with self._prefetch_lock:
+                busy = self._live > 0 or now() - self._live_ended < LIVE_QUIET_SECONDS
+            if not busy:
+                return
+            sleep(0.2)
+
+    def prefetch_cues_async(self, cues: list[dict], voice: str | None = None) -> None:
+        """Queue the dub audio of every finished sentence, as each translated
+        chunk comes in, so seeking anywhere finds it ready.
+
+        The voice is the one the player last asked for (or UDTH_PREFETCH_VOICE):
+        audio in another voice would never be played. Nothing is queued before
+        the player has dubbed anything, so a lecture watched without dubbing
+        costs no GPU time.
+
+        Each sentence is queued once, however many partial results repeat it,
+        and at most PREFETCH_WORKERS at a time: the GPU on the other end makes
+        one clip at a time, and a live request from the player must never
+        wait behind a long queue of clips nobody is listening to yet.
+        """
+        target_voice = (
+            voice or (os.environ.get("UDTH_PREFETCH_VOICE") or "").strip() or self.last_voice or ""
+        )
+        if not target_voice:
+            return
+        try:
+            self.engine_for(target_voice)
+        except TtsError:
+            return
+        fresh = []
+        with self._prefetch_lock:
+            for sentence in sentences_from_cues(cues):
+                key = (target_voice, sentence)
+                if key not in self._prefetch_seen:
+                    self._prefetch_seen.add(key)
+                    fresh.append(sentence)
+            if not fresh:
+                return
+            if self._prefetch_pool is None:
+                self._prefetch_pool = ThreadPoolExecutor(
+                    max_workers=PREFETCH_WORKERS, thread_name_prefix="udth-tts-prefetch"
+                )
+            pool = self._prefetch_pool
+
+        def one(sentence: str) -> None:
+            a100_voice.priority.set(a100_voice.BACKGROUND)
+            try:
+                self._wait_for_quiet()
+                self.synthesize(sentence, target_voice)
+            except Exception:
+                # Best effort; forget it so a later partial can try again.
+                with self._prefetch_lock:
+                    self._prefetch_seen.discard((target_voice, sentence))
+
+        for sentence in fresh:
+            pool.submit(one, sentence)
 
     def catalogue(self) -> list[dict]:
         """Every engine with its voices and whether it is usable right now.

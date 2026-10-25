@@ -108,11 +108,15 @@ test('an extension reload is named, with the fix', async () => {
 });
 
 test('the engine catalogue includes what each engine can do', async () => {
-  const {send} = transport({'GET /health': {ok: true, data: {ok: true, voices: [
+  const {send} = transport({'GET /health': {ok: true, data: {ok: true, version: '1.3.0', engine: 'agy', a100: true, voices: [
     {name: 'seamless', label: 'Seamless', ready: true, translates: true, voices: [{id: 'seamless:th', label: 'ไทย'}]},
   ]}}});
-  const engines = await createApi(send).engines();
-  assert.deepEqual(engines, [{name: 'seamless', label: 'Seamless', ready: true, error: '', translates: true, voices: [{id: 'seamless:th', label: 'ไทย'}]}]);
+  const api = createApi(send);
+  const health = await api.health();
+  assert.equal(health.version, '1.3.0');
+  assert.equal(health.a100, true);
+  assert.equal(health.llmEngine, 'agy');
+  assert.deepEqual(health.engines, [{name: 'seamless', label: 'Seamless', ready: true, error: '', translates: true, voices: [{id: 'seamless:th', label: 'ไทย'}]}]);
 });
 
 test('queueing a lecture for later sends it as a batch job and does not wait', async () => {

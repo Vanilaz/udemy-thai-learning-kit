@@ -20,6 +20,9 @@
 
     // ---- settings (menu and popup)
     "ปิดเมนู": "Close menu",
+    "ทำงานอัตโนมัติ": "Auto-translate",
+    "เปิดอยู่ · แปลซับและบทเรียนให้อัตโนมัติ": "On · translates lectures automatically",
+    "ปิดอยู่ · กดเพื่อเริ่มแปลบทเรียนนี้": "Off · press to start translating",
     "ซับบนวิดีโอ": "Subtitles",
     "ปิด": "Off",
     "ไทย + ต้นฉบับ": "Thai + original",
@@ -51,10 +54,19 @@
     "เซิร์ฟเวอร์ไม่มีเครื่องมือเสียงนี้": "The server does not have this voice engine",
     "กำลังเตรียมคิว ...": "Preparing the queue ...",
     "ส่งเข้าคิวแล้ว ดูความคืบหน้าที่มุมซ้ายล่าง": "Queued. Progress is shown at the bottom left",
+    "เชื่อมต่อ A100 แล้ว": "A100 connected",
+    "โหมดเครื่องตัวเอง": "Local mode",
+    "คลาวด์ A100": "A100 Cloud",
+    "การ์ดจอ": "Local GPU",
+    "คลาวด์ฟรี": "Free Cloud",
+    "ในเบราว์เซอร์": "Browser",
 
     // ---- popup only
     "กำลังตรวจสอบ ...": "Checking ...",
     "การแสดงผล": "Display",
+    "แปลซับและบทเรียนเมื่อเปิดหน้า": "Translate subtitles and lectures when opened",
+    "ส่วนขยายปิดอยู่ กดสวิตช์ทำงานอัตโนมัติเพื่อเริ่มแปล":
+      "The extension is paused. Turn on Auto-translate to start",
     "ซับไทย": "Thai subtitles",
     "แสดงคำแปลทับบนวิดีโอ":"Show the translation over the video",
     "ต้นฉบับกำกับ": "Show the original",
@@ -186,6 +198,9 @@
     "Microsoft Edge Neural (ฟรีไม่จำกัด)": "Microsoft Edge Neural (free, unlimited)",
     "Meta SeamlessM4T (รันในเครื่อง / แปลเสียงเองได้)": "Meta SeamlessM4T (runs locally / translates by itself)",
     "OmniVoice Thai (รันในเครื่อง / ต้องมี GPU)": "OmniVoice Thai (runs locally / needs a GPU)",
+    "ThonburianTTS megaF5 (A100 / โคลนเสียงได้)":
+      "ThonburianTTS megaF5 (A100 / voice cloning)",
+    "OpenJaiTTS v1 (A100 / โคลนเสียงได้)": "OpenJaiTTS v1 (A100 / voice cloning)",
     "Niwat — ชาย": "Niwat — male",
     "Premwadee — หญิง": "Premwadee — female",
     "Gacrux — หญิง": "Gacrux — female",
@@ -196,6 +211,7 @@
     "หญิง": "Female",
     "ชาย (วัยหนุ่ม เสียงกลาง)": "Male (young, mid-pitch)",
     "หญิง (เสียงทุ้ม นุ่ม)": "Female (deep, soft)",
+    "เสียงมาตรฐาน": "Standard voice",
     "โคลนเสียงจากไฟล์ตัวอย่าง": "Clone a voice from a sample file",
   };
 

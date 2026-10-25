@@ -25,12 +25,26 @@
     name: "windows", label: t("Windows (เสียงในเบราว์เซอร์)"), ready: true, translates: false, voices: [], error: "",
   });
 
+  function engineTier(engineName) {
+    if (engineName === "thonburian" || engineName === "openjai") {
+      return { text: t("คลาวด์ A100"), kind: "a100" };
+    }
+    if (engineName === "omnivoice" || engineName === "seamless") {
+      return { text: t("การ์ดจอ"), kind: "gpu" };
+    }
+    if (engineName === "edge") {
+      return { text: t("คลาวด์ฟรี"), kind: "cloud" };
+    }
+    return { text: t("ในเบราว์เซอร์"), kind: "browser" };
+  }
+
   function menuHtml(version) {
     return (
       '<div class="udth-menu-head">' +
       '<div class="udth-logo" aria-hidden="true">ท</div>' +
-      `<div class="udth-menu-titles"><div class="udth-menu-title">${t("ฮองเรียน")}</div>` +
-      `<div class="udth-menu-sub"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>${t("ไทย")}` +
+      `<div class="udth-menu-titles"><div class="udth-menu-title-row"><span class="udth-menu-title">${t("ฮองเรียน")}</span>` +
+      `<span class="udth-hw-badge" data-udth="hwBadge" hidden></span></div>` +
+      `<div class="udth-menu-sub"><span class="udth-lang-pair"><span data-udth="src">EN</span><span class="udth-menu-arrow">→</span>${t("ไทย")}</span>` +
       `<span class="udth-ver">· v${version}</span></div></div>` +
       // Each language is named in itself, so either reader can find theirs.
       `<div class="udth-seg udth-seg-lang" role="group" aria-label="${t("ภาษาของหน้าจอ")}">` +
@@ -38,6 +52,15 @@
       '<button type="button" data-udth="lang" data-val="en" lang="en">EN</button></div>' +
       `<button type="button" class="udth-icon-btn" data-udth="close" aria-label="${t("ปิดเมนู")}">` +
       icon('<path d="M18 6 6 18M6 6l12 12"/>', 18) + "</button></div>" +
+      '<div class="udth-group udth-dub-group udth-power-group">' +
+      '<button type="button" class="udth-dubrow" data-udth="active" aria-pressed="false">' +
+      '<span class="udth-dubrow-ico">' +
+      icon('<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>', 18) +
+      "</span>" +
+      `<span class="udth-dubrow-txt"><b>${t("ทำงานอัตโนมัติ")}</b><small data-state="active"></small></span>` +
+      '<span class="udth-switch" aria-hidden="true"></span></button>' +
+      "</div>" +
+      '<div class="udth-body" data-udth="body">' +
       '<div class="udth-group">' +
       '<div class="udth-row-label">' +
       icon('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>', 14) +
@@ -59,6 +82,7 @@
       icon('<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>', 18) +
       "</span>" +
       `<span class="udth-dubrow-txt"><b>${t("พากย์เสียงไทย")}</b><small data-state="dub"></small></span>` +
+      '<span class="udth-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>' +
       '<span class="udth-switch" aria-hidden="true"></span></button>' +
       '<div class="udth-start" data-udth-row="start">' +
       `<div class="udth-seg" role="group" aria-label="${t("เริ่มเล่นเมื่อไหร่")}">` +
@@ -73,7 +97,7 @@
       icon('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>', 15) +
       `${t("ตั้งค่าเสียงพากย์")}<span class="udth-chev">` + icon('<path d="m6 9 6 6 6-6"/>', 16) + "</span></summary>" +
       '<div class="udth-card">' +
-      `<label class="udth-field"><span>${t("เครื่องมือเสียง")}</span><select data-udth="engine"></select></label>` +
+      `<label class="udth-field"><span class="udth-field-head"><span>${t("เครื่องมือเสียง")}</span><em class="udth-tier-badge" data-udth="engineTier"></em></span><select data-udth="engine"></select></label>` +
       `<label class="udth-field"><span>${t("เสียง")}</span><select data-udth="voice"></select></label>` +
       `<label class="udth-field"><span>${t("ความดังเสียงพากย์")}</span>` +
       '<input type="range" min="0" max="1" step="0.05" data-udth="volume"><output data-udth="volumeOut"></output></label>' +
@@ -89,6 +113,7 @@
       '<button type="button" class="udth-btn udth-btn-primary" data-udth="section">' +
       icon('<path d="M5 12h14M13 6l6 6-6 6"/>', 15) + `${t("แปลทั้ง Section ล่วงหน้า")}</button>` +
       "</div>" +
+      "</div>" +
       '<div class="udth-panel-note" role="status" aria-live="polite"></div>'
     );
   }
@@ -99,6 +124,7 @@
    * @param {HTMLMediaElement} deps.video
    * @param {object} deps.store             core/settings.js store
    * @param {() => object[]} deps.engines   server engine catalogue (may be empty)
+   * @param {() => boolean} [deps.a100]     whether A100 remote GPU is configured
    * @param {() => Promise<void>} deps.refreshEngines
    * @param {() => string} deps.sourceLang
    * @param {() => string} deps.serverIssue why engines are missing, or ""
@@ -106,7 +132,7 @@
    * @param {(() => Promise<{ok:boolean,error?:string}>)|null} deps.onTranslateSection
    * @param {(open: boolean) => void} [deps.onToggle]
    */
-  function createMenu({ site, video, store, engines, refreshEngines, sourceLang, serverIssue, onRetranslate,
+  function createMenu({ site, video, store, engines, a100 = () => false, refreshEngines, sourceLang, serverIssue, onRetranslate,
     onTranslateSection, onToggle = () => {} }) {
     let button = null;
     let el = null;
@@ -244,12 +270,14 @@
         event.preventDefault();
         const action = target.dataset.udth;
         const val = target.dataset.val;
-        const dub = store.get().dub;
+        const s = store.get();
+        const dub = s.dub;
         if (action === "toggle") setOpen(!open);
         else if (action === "close") {
           setOpen(false);
           button.focus();
-        } else if (action === "subtitles") store.save({ subtitles: val });
+        } else if (action === "active") store.save({ active: !s.active });
+        else if (action === "subtitles") store.save({ subtitles: val });
         else if (action === "textSize") store.save({ textSize: val });
         else if (action === "lang") store.save({ lang: val });
         else if (action === "dub") store.save({ dub: { on: !dub.on } });
@@ -333,6 +361,18 @@
         b.classList.toggle("udth-seg-on", on);
         b.setAttribute("aria-pressed", String(on));
       }
+
+      const activeRow = $("active");
+      if (activeRow) {
+        activeRow.classList.toggle("udth-dubrow-on", Boolean(s.active));
+        activeRow.setAttribute("aria-pressed", String(Boolean(s.active)));
+        el.querySelector('[data-state="active"]').textContent = s.active
+          ? t("เปิดอยู่ · แปลซับและบทเรียนให้อัตโนมัติ")
+          : t("ปิดอยู่ · กดเพื่อเริ่มแปลบทเรียนนี้");
+      }
+      const bodyEl = $("body");
+      if (bodyEl) bodyEl.classList.toggle("udth-body-off", !s.active);
+
       const dubRow = $("dub");
       dubRow.classList.toggle("udth-dubrow-on", dub.on);
       dubRow.setAttribute("aria-pressed", String(dub.on));
@@ -347,7 +387,8 @@
           ? t("เล่นได้ทันที Seamless แปลและพากย์จากต้นฉบับ แล้วเปลี่ยนเป็นคำแปล AI เมื่อแปลเสร็จ")
           : t("รอ AI แปลก่อนราว 1 นาที ซับและเสียงตรงกันทุกคำ แม่นที่สุด");
 
-      button.classList.toggle("udth-pill-on", s.subtitles !== "off" || dub.on);
+      button.classList.toggle("udth-pill-on", Boolean(s.active && (s.subtitles !== "off" || dub.on)));
+      button.classList.toggle("udth-pill-dub", Boolean(s.active && dub.on));
       button.classList.toggle("udth-pill-open", open);
       button.setAttribute("aria-expanded", String(open));
       el.hidden = !open;
@@ -355,6 +396,22 @@
 
       // "EN-US" -> "EN": the language matters to the viewer, not the region.
       $("src").textContent = (sourceLang() || "EN").split("-")[0].toUpperCase();
+      const hwBadge = $("hwBadge");
+      if (hwBadge) {
+        const hasServer = engines().length > 0 && !serverIssue();
+        hwBadge.hidden = !hasServer;
+        if (hasServer) {
+          const onA100 = Boolean(a100 && a100());
+          hwBadge.textContent = onA100 ? t("เชื่อมต่อ A100 แล้ว") : t("โหมดเครื่องตัวเอง");
+          hwBadge.dataset.mode = onA100 ? "a100" : "local";
+        }
+      }
+      const tierEl = $("engineTier");
+      if (tierEl) {
+        const tier = engineTier(dub.engine);
+        tierEl.textContent = tier.text;
+        tierEl.dataset.tier = tier.kind;
+      }
       const engineOptions = catalogue().map((e) => ({
         value: e.name,
         label: e.ready ? e.label : t("{engine} (ยังไม่พร้อม)", { engine: e.label }),
@@ -369,11 +426,19 @@
         voices.length ? voices.map((v) => ({ value: v.id, label: v.label })) : [{ value: "", label: t("เลือกอัตโนมัติ") }],
         dub.voice
       );
+      const volPct = `${Math.round(dub.volume * 100)}%`;
       $("volume").value = String(dub.volume);
-      $("volumeOut").value = `${Math.round(dub.volume * 100)}%`;
+      $("volume").style.setProperty("--val", volPct);
+      $("volumeOut").value = volPct;
+
+      const srcPct = `${Math.round(dub.sourceVolume * 100)}%`;
       $("sourceVolume").value = String(dub.sourceVolume);
-      $("sourceVolumeOut").value = `${Math.round(dub.sourceVolume * 100)}%`;
+      $("sourceVolume").style.setProperty("--val", srcPct);
+      $("sourceVolumeOut").value = srcPct;
+
+      const ratePct = `${Math.round((dub.maxRate - 1) * 100)}%`;
       $("maxRate").value = String(dub.maxRate);
+      $("maxRate").style.setProperty("--val", ratePct);
       $("maxRateOut").value = `${dub.maxRate.toFixed(2)}x`;
       $("section").hidden = !site.supportsSection || !onTranslateSection;
 
