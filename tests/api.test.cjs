@@ -150,3 +150,18 @@ test('course vocabulary requests keep the course in one encoded query value', as
   assert.equal(result.terms[0].term, 'MVC');
   assert.deepEqual(calls, ['GET /glossary?course=course%26other%3Dx']);
 });
+
+
+test('failed API calls report diagnostics without sending the request body again', async () => {
+  const events = [];
+  const api = createApi(async msg => {
+    if (msg.type === 'diagnostic') { events.push(msg.event); return {ok:true}; }
+    return {ok:false,status:400,error:'Speech failed 403'};
+  });
+  await assert.rejects(api.speak({text:'private lesson text',voice:'edge'}), /Speech failed/);
+  await new Promise(setImmediate);
+  assert.equal(events.length,1);
+  assert.equal(events[0].path,'/tts');
+  assert.equal(events[0].status,400);
+  assert.ok(!JSON.stringify(events).includes('private lesson text'));
+});

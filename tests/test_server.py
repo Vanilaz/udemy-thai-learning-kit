@@ -98,6 +98,17 @@ class ServerTests(unittest.TestCase):
             if duplicate is not None:
                 duplicate.server_close()
 
+    def test_errors_and_extension_diagnostics_are_saved(self):
+        self.request("GET", "/not-found")
+        code, _, _ = self.request("POST", "/diagnostics", {"events": [{"source": "speech", "message": "403", "status": 403, "body": "not recorded"}]})
+        self.assertEqual(code, 200)
+        path = self.root / "logs/errors.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(rows[0]["status"], 404)
+        self.assertEqual(rows[-1]["source"], "extension:speech")
+        self.assertNotIn("not recorded", path.read_text())
+        self.assertEqual(self.request("POST", "/diagnostics", {"events": [1]})[0], 400)
+
     def test_valid_input_and_missing_job(self):
         self.assertEqual(self.request("GET", "/job/missing")[0], 404)
         key = self.enqueue()

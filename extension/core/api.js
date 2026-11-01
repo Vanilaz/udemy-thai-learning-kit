@@ -50,22 +50,37 @@
   }
 
   function createApi(send, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+    function reportError(message, path = "", status = 0, source = "api") {
+      // Report separately: a diagnostics failure must not recurse through call().
+      Promise.resolve().then(() => send({type: "diagnostic", event: {
+        source, message: String(message).slice(0, 1000), path: path.split("?")[0], status,
+      }})).catch(() => {});
+    }
     async function call(method, path, body = null, { timeoutMs = 25000, audio = false } = {}) {
       let reply;
       try {
         reply = await send({ type: "api", method, path, body, timeoutMs, audio });
       } catch (error) {
+        reportError(describeExtensionError(String((error && error.message) || error)), path);
         throw new ApiError(describeExtensionError(String((error && error.message) || error)), "extension");
       }
-      if (!reply) throw new ApiError(t("ส่วนขยายไม่ตอบ กด F5 รีเฟรชหน้านี้"), "extension");
+      if (!reply) {
+        reportError("Extension returned no reply", path);
+        throw new ApiError(t("ส่วนขยายไม่ตอบ กด F5 รีเฟรชหน้านี้"), "extension");
+      }
       if (reply.unreachable) {
+        reportError("Local server unreachable", path);
         throw new ApiError(t("ยังไม่ได้เปิดเซิร์ฟเวอร์ ดับเบิลคลิก start-server.cmd"), "unreachable");
       }
-      if (!reply.ok) throw new ApiError(reply.error || t("เซิร์ฟเวอร์ตอบ {status}", { status: reply.status }), "server");
+      if (!reply.ok) {
+        reportError(reply.error || "Request failed", path, reply.status || 0);
+        throw new ApiError(reply.error || t("เซิร์ฟเวอร์ตอบ {status}", { status: reply.status }), "server");
+      }
       return reply.data;
     }
 
     return {
+      reportError,
       /** Server version and its speech engines (what each can do). */
       async health() {
         const health = await call("GET", "/health", null, { timeoutMs: 3000 });

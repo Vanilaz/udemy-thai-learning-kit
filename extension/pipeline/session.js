@@ -68,7 +68,13 @@
 
     const dub = () => settings.get().dub;
 
+    let lastDiagnostic = "";
     function emit(state) {
+      const issue = state.message || state.notice || "";
+      if (!disposed && issue && issue !== lastDiagnostic && api.reportError) {
+        lastDiagnostic = issue;
+        api.reportError(issue, "", 0, "session");
+      }
       if (!disposed) onState(state);
     }
 
@@ -285,6 +291,7 @@
         voice,
         settings: dub,
         onIssue: (error) => {
+          if (api.reportError) api.reportError(String(error.message || error), "/tts", 0, "speech");
           notice = t("พากย์เสียงไม่ได้: {reason}", { reason: String((error && error.message) || error).slice(0, 100) });
           publish();
         },

@@ -10,7 +10,7 @@
 // in the tab and is not subject to that lifetime.
 
 /* global importScripts */
-importScripts("core/i18n.js");
+importScripts("core/i18n.js", "core/diagnostics.js");
 const { t } = UDTH.i18n;
 
 // Errors written here reach the page as text, so they follow the language the
@@ -148,9 +148,28 @@ async function youtubeCaptionTracks(tabId) {
   return value.tracks || [];
 }
 
+const diagnostics = UDTH.diagnostics.createDiagnostics({
+  storage: chrome.storage.local,
+  post: async events => {
+    const response = await localFetch(`${await serverUrl()}/diagnostics`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({events}),
+    }, 3000);
+    return response.ok;
+  },
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "diagnostic") {
+    diagnostics.record(message.event).then(() => diagnostics.flush()).then(
+      () => sendResponse({ok: true}), () => sendResponse({ok: false})
+    );
+    return true;
+  }
   if (message.type === "api") {
-    apiRequest(message).then(sendResponse, (error) =>
+    apiRequest(message).then(reply => {
+      sendResponse(reply);
+      if (reply.ok) diagnostics.flush().catch(() => {});
+    }, (error) =>
       sendResponse({ ok: false, status: 0, error: String((error && error.message) || error) })
     );
     return true;

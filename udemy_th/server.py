@@ -40,7 +40,7 @@ from urllib.parse import unquote, urlparse, parse_qs
 from .build import _parse_subtitles, _parse_terms, _split_sections
 from . import __version__
 from .env import ENV_PATH, LOADED as ENV_LOADED
-from . import loudness
+from . import loudness, error_log
 from .glossary import Glossary, course_glossary_path
 from .models import Lesson, Segment
 from .google_tts import TtsError
@@ -242,6 +242,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _send(self, code: int, payload: dict) -> None:
+        if code >= 400:
+            error_log.write(self.cache_dir, {"source": "server", "path": self.path,
+                                           "status": code, "message": payload.get("error", "Request failed")})
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -356,7 +359,7 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         action = re.fullmatch(r"/job/([a-f0-9]{20})/(cancel|retry)", path)
         focus = re.fullmatch(r"/job/([a-f0-9]{20})/focus", path)
-        if path not in ("/translate", "/tts", "/tts/warmup", "/tts/batch", "/asr") and not action and not focus:
+        if path not in ("/translate", "/tts", "/tts/warmup", "/tts/batch", "/asr", "/diagnostics") and not action and not focus:
             self._refuse(404, "not found")
             return
 
@@ -379,6 +382,18 @@ class _Handler(BaseHTTPRequestHandler):
 
         if not isinstance(payload, dict):
             self._send(400, {"error": "JSON ต้องเป็น object"})
+            return
+
+        if path == "/diagnostics":
+            events = payload.get("events")
+            if not isinstance(events, list) or len(events) > 100 or any(
+                not isinstance(e, dict) or not isinstance(e.get("message"), str) for e in events
+            ):
+                self._send(400, {"error": "Invalid diagnostic events"})
+                return
+            for event in events:
+                error_log.write(self.cache_dir, {**event, "source": "extension:" + str(event.get("source", "unknown"))[:30]})
+            self._send(200, {"ok": True})
             return
 
         if focus:
@@ -803,6 +818,7 @@ def _run_job(
             _set_job(key, status="cancelled")
             return
         traceback.print_exc()
+        error_log.write(cache_dir, {"source": "translation", "path": "/job/" + key, "message": str(exc)})
         _set_job(key, status="error", error=str(exc))
 
 
