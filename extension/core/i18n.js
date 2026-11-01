@@ -10,6 +10,16 @@
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
 
   const EN = {
+    "กำลังบันทึกเสียงจนจบบท ห้ามกรอวิดีโอ กดปุ่มเดิมเพื่อยกเลิก": "Recording until the lesson ends. Do not seek. Press again to cancel",
+    "บันทึกแล้ว กำลังถอดเสียงและแปล กรุณารอ ...": "Recorded. Transcribing and translating, please wait ...",
+    "ไม่ได้รับเสียงแท็บ เลือกแท็บ Udemy และเปิดแชร์เสียงแท็บ": "No tab audio received. Select the Udemy tab and enable sharing tab audio",
+    "รองรับการบันทึกบทไม่เกิน 12 นาที": "Recording supports lessons up to 12 minutes",
+    "ยกเลิกเพราะมีการกรอวิดีโอ กรุณาเริ่มบันทึกใหม่": "Cancelled after seeking. Start recording again",
+    "ยกเลิกการบันทึกแล้ว": "Recording cancelled",
+    "บันทึกเสียงไม่สำเร็จ: {reason}": "Audio capture failed: {reason}",
+    "จับเสียงแท็บแล้วแปล / ยกเลิก": "Capture tab audio and translate / cancel",
+    "เลือกแท็บนี้และแชร์เสียง ระบบเล่นตั้งแต่ต้นจนจบแล้วแปล ไม่ใช่ซับสด เสียงส่งไป A100 หากตั้งค่าไว้": "Select this tab and share audio. Plays from start to end before translating; not live subtitles. Audio is sent to A100 if configured",
+
     "ไฟล์ใหญ่เกิน 5 MB ให้แบ่งเสียงเป็นไฟล์เล็กก่อน": "File exceeds 5 MB; use a smaller audio file",
     "ไม่พบข้อความพร้อมเวลาในไฟล์นี้": "No timestamped text found in this file",
     "บทไม่มีซับ: นำเข้าเสียงหรือซับ": "No captions: import audio or subtitles",

@@ -118,6 +118,7 @@
       `<label class="udth-field"><span>${t("เร่งเสียงพากย์ได้สูงสุด")}</span>` +
       '<input type="range" min="1" max="2.5" step="0.05" data-udth="maxRate"><output data-udth="maxRateOut"></output></label>' +
       "</div></details>" +
+      '<div class="udth-course-terms"><button type="button" class="udth-btn" data-udth="captureAudio">' + t("จับเสียงแท็บแล้วแปล / ยกเลิก") + '</button><p>' + t("เลือกแท็บนี้และแชร์เสียง ระบบเล่นตั้งแต่ต้นจนจบแล้วแปล ไม่ใช่ซับสด เสียงส่งไป A100 หากตั้งค่าไว้") + '</p></div>' +
       '<details class="udth-course-terms"><summary>' + t("บทไม่มีซับ: นำเข้าเสียงหรือซับ") + '</summary>' +
       '<p>' + t("เลือก SRT/VTT หรือไฟล์เสียงไม่เกิน 5 MB ระบบจะถอดเสียงในเครื่อง หรือส่งไป A100 ถ้าตั้งค่าไว้ ใช้เสียงที่เริ่มตรงกับวิดีโอ") + '</p>' +
       '<input type="file" data-udth="importTranscript" accept=".srt,.vtt,.wav,.mp3,.m4a,.ogg,.webm" aria-label="' + t("นำเข้าเสียงหรือซับสำหรับบทนี้") + '"></details>' +
@@ -148,7 +149,7 @@
    * @param {(open: boolean) => void} [deps.onToggle]
    */
   function createMenu({ site, video, store, engines, a100 = () => false, refreshEngines, sourceLang, sourceInfo = () => null, glossary = async () => ({ count: 0, terms: [] }), serverIssue, onRetranslate,
-    onTranslateSection, onImportTranscript, onToggle = () => {} }) {
+    onTranslateSection, onImportTranscript, onCaptureAudio, onToggle = () => {} }) {
     let button = null;
     let el = null;
     let open = false;
@@ -320,6 +321,7 @@
         else if (action === "lang") store.save({ lang: val });
         else if (action === "dub") store.save({ dub: { on: !dub.on } });
         else if (action === "start") store.save({ dub: { start: val } });
+        else if (action === "captureAudio" && onCaptureAudio) onCaptureAudio();
         else if (action === "retry") onRetranslate();
         else if (action === "section" && onTranslateSection) {
           setNote(t("กำลังเตรียมคิว ..."));

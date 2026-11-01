@@ -112,6 +112,39 @@
     return false;
   }
 
+  let captureController = null;
+  async function captureAudio() {
+    if (captureController) { captureController.abort(); return; }
+    const video = page.video, generation = page.generation;
+    const previousDub = store.get().dub.on;
+    const controller = new AbortController();
+    captureController = controller;
+    // Open the share chooser immediately from the menu click.
+    const captured = UDTH.tabAudio.captureLesson({video, signal:controller.signal,
+      onStatus: () => page.menu?.setNote(t("กำลังบันทึกเสียงจนจบบท ห้ามกรอวิดีโอ กดปุ่มเดิมเพื่อยกเลิก"))})
+      .then(blob => ({blob}), error => ({error}));
+    try {
+      await store.save({dub:{on:false}});
+      const result = await captured;
+      if (result.error) throw result.error;
+      const blob = result.blob;
+      if (generation !== page.generation) return;
+      page.menu?.setNote(t("บันทึกแล้ว กำลังถอดเสียงและแปล กรุณารอ ..."));
+      await importTranscript(new File([blob], "lesson.webm", {type:blob.type}));
+    } catch (error) {
+      const messages = {
+        "capture-no-audio": t("ไม่ได้รับเสียงแท็บ เลือกแท็บ Udemy และเปิดแชร์เสียงแท็บ"),
+        "capture-duration": t("รองรับการบันทึกบทไม่เกิน 12 นาที"),
+        "capture-seek": t("ยกเลิกเพราะมีการกรอวิดีโอ กรุณาเริ่มบันทึกใหม่"),
+        "capture-cancelled": t("ยกเลิกการบันทึกแล้ว"),
+      };
+      if (generation === page.generation) page.menu?.setNote(messages[error.message] || t("บันทึกเสียงไม่สำเร็จ: {reason}", {reason:error.name || error.message}), true);
+    } finally {
+      captureController = null;
+      await store.save({dub:{on:previousDub}});
+    }
+  }
+
   async function importTranscript(file) {
     const course = site.cacheScope(), lecture = site.cacheId(), generation = page.generation;
     if (file.size > 5 * 1024 * 1024) throw new Error(t("ไฟล์ใหญ่เกิน 5 MB ให้แบ่งเสียงเป็นไฟล์เล็กก่อน"));
@@ -307,6 +340,7 @@
   }
 
   function teardown() {
+    captureController?.abort();
     pagesState.generation += 1;
     stopVideoSession();
     if (page.video) page.video.removeEventListener("timeupdate", drawCaption);
@@ -369,6 +403,7 @@
       serverIssue: () => serverIssue,
       onRetranslate: retranslate,
       onImportTranscript: importTranscript,
+      onCaptureAudio: captureAudio,
       onTranslateSection: pages && site.supportsSection ? () => pages.translateSection() : null,
       onToggle: () => page.overlay && page.overlay.place(),
     });
