@@ -165,3 +165,14 @@ test('failed API calls report diagnostics without sending the request body again
   assert.equal(events[0].status,400);
   assert.ok(!JSON.stringify(events).includes('private lesson text'));
 });
+
+
+test('imported audio uses ASR with timestamps and a long transcription timeout', async () => {
+ let request;
+ const api=createApi(async msg=>{request=msg;return {ok:true,data:{lang:'es',cues:[{start:0,end:1,text:'Hola'}]}};});
+ const result=await api.transcribe('YXVkaW8=');
+ assert.equal(request.path,'/asr');
+ assert.equal(request.timeoutMs,600000);
+ assert.deepEqual(request.body,{audio_b64:'YXVkaW8=',timestamps:true});
+ assert.equal(result.lang,'es');
+});

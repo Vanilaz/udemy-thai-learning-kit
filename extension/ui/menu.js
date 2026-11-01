@@ -42,7 +42,7 @@
     if (!info || !info.language) return t("กำลังตรวจแหล่งซับ");
     let language = info.language;
     try { language = new Intl.DisplayNames([UDTH.i18n.lang()], { type: "language" }).of(info.language.toLowerCase()); } catch {}
-    const kind = info.kind === "auto" ? t("ซับอัตโนมัติ") : info.kind === "cc" ? t("ซับ CC") : t("ไม่ทราบชนิดซับ");
+    const kind = info.kind === "imported" ? t("ซับจากไฟล์ที่นำเข้า") : info.kind === "asr" ? t("ถอดจากไฟล์เสียง") : info.kind === "auto" ? t("ซับอัตโนมัติ") : info.kind === "cc" ? t("ซับ CC") : t("ไม่ทราบชนิดซับ");
     const origin = info.fallback ? t("ซับสำรอง อาจผ่านการแปลมาแล้ว") : info.courseLanguage ? t("ตรงกับภาษาที่คอร์สระบุ") : t("ยังไม่ยืนยันภาษาที่ผู้สอนพูด");
     return `${language} · ${kind} · ${origin}`;
   }
@@ -118,6 +118,9 @@
       `<label class="udth-field"><span>${t("เร่งเสียงพากย์ได้สูงสุด")}</span>` +
       '<input type="range" min="1" max="2.5" step="0.05" data-udth="maxRate"><output data-udth="maxRateOut"></output></label>' +
       "</div></details>" +
+      '<details class="udth-course-terms"><summary>' + t("บทไม่มีซับ: นำเข้าเสียงหรือซับ") + '</summary>' +
+      '<p>' + t("เลือก SRT/VTT หรือไฟล์เสียงไม่เกิน 5 MB ระบบจะถอดเสียงในเครื่อง หรือส่งไป A100 ถ้าตั้งค่าไว้ ใช้เสียงที่เริ่มตรงกับวิดีโอ") + '</p>' +
+      '<input type="file" data-udth="importTranscript" accept=".srt,.vtt,.wav,.mp3,.m4a,.ogg,.webm" aria-label="' + t("นำเข้าเสียงหรือซับสำหรับบทนี้") + '"></details>' +
       '<div class="udth-menu-actions">' +
       '<button type="button" class="udth-btn" data-udth="retry">' +
       icon('<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/>', 15) +
@@ -145,7 +148,7 @@
    * @param {(open: boolean) => void} [deps.onToggle]
    */
   function createMenu({ site, video, store, engines, a100 = () => false, refreshEngines, sourceLang, sourceInfo = () => null, glossary = async () => ({ count: 0, terms: [] }), serverIssue, onRetranslate,
-    onTranslateSection, onToggle = () => {} }) {
+    onTranslateSection, onImportTranscript, onToggle = () => {} }) {
     let button = null;
     let el = null;
     let open = false;
@@ -328,7 +331,15 @@
       });
       root.addEventListener("change", (event) => {
         const key = event.target.dataset.udth;
-        if (key === "engine") store.save({ dub: { engine: event.target.value } });
+        if (key === "importTranscript" && onImportTranscript) {
+          const input = event.target, file = input.files[0];
+          if (!file) return;
+          input.disabled = true;
+          setNote(t("กำลังนำเข้าและถอดเสียง กรุณารอ ..."));
+          onImportTranscript(file).catch(error => setNote(String(error.message || error), true))
+            .finally(() => { input.disabled = false; input.value = ""; });
+        }
+        else if (key === "engine") store.save({ dub: { engine: event.target.value } });
         else if (key === "voice") store.save({ dub: { voice: event.target.value } });
       });
       root.addEventListener("input", (event) => {

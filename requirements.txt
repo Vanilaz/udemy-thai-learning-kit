@@ -14,3 +14,6 @@ google-cloud-texttospeech>=2.33.0
 
 # เสียงพากย์ AI บนการ์ดจอ (SeamlessM4T / OmniVoice) แยกไว้ที่ requirements-gpu.txt
 # เพราะต้องติดตั้ง PyTorch รุ่น CUDA ก่อน และต้องล็อกเวอร์ชันให้ตรงกัน
+
+# CPU transcription for imported audio; downloads model on first use
+faster-whisper>=1.2.1,<2

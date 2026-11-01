@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_name__",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "__MSG_description__",
   "default_locale": "en",
   "permissions": [
@@ -37,6 +37,7 @@
         "core/timeline.js",
         "core/settings.js",
         "core/api.js",
+        "core/imported-transcript.js",
         "pipeline/dubber.js",
         "pipeline/voices.js",
         "pipeline/session.js",

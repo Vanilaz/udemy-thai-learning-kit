@@ -112,6 +112,28 @@
     return false;
   }
 
+  async function importTranscript(file) {
+    const course = site.cacheScope(), lecture = site.cacheId(), generation = page.generation;
+    if (file.size > 5 * 1024 * 1024) throw new Error(t("ไฟล์ใหญ่เกิน 5 MB ให้แบ่งเสียงเป็นไฟล์เล็กก่อน"));
+    let cues, sourceLang = "", kind = "imported";
+    if (/\.(srt|vtt)$/i.test(file.name)) {
+      cues = UDTH.importedTranscript.parseTimedText(await file.text());
+    } else {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      const result = await api.transcribe(btoa(binary));
+      cues = result.cues;
+      sourceLang = result.lang || "";
+      kind = "asr";
+    }
+    if (!cues?.length) throw new Error(t("ไม่พบข้อความพร้อมเวลาในไฟล์นี้"));
+    if (generation !== page.generation || lecture !== site.cacheId()) return;
+    const key = UDTH.importedTranscript.storageKey(course, lecture);
+    await chrome.storage.local.set({[key]: {ok:true, cues, sourceLang, captionKind:kind}});
+    await retranslate();
+  }
+
   async function retranslate() {
     const id = site.cacheId();
     if (id) await chrome.storage.local.set({ forceLecture: String(id) }).catch(() => {});
@@ -308,7 +330,11 @@
     if (generation !== page.generation || !store.get().active || !page.video) return;
     page.session = UDTH.session.createSession({
       site: { title: () => site.title(), cacheScope: () => site.cacheScope(), cacheId: () => site.cacheId(),
-        transcript: () => site.videoCues(described.payload) },
+        transcript: async () => {
+          const key = UDTH.importedTranscript.storageKey(site.cacheScope(), site.cacheId());
+          const saved = (await chrome.storage.local.get(key))[key];
+          return saved && saved.cues?.length ? saved : site.videoCues(described.payload);
+        } },
       video: page.video,
       api,
       settings: store,
@@ -342,6 +368,7 @@
       glossary: () => api.glossary(site.cacheScope()),
       serverIssue: () => serverIssue,
       onRetranslate: retranslate,
+      onImportTranscript: importTranscript,
       onTranslateSection: pages && site.supportsSection ? () => pages.translateSection() : null,
       onToggle: () => page.overlay && page.overlay.place(),
     });

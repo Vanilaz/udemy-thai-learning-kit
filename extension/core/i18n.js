@@ -10,6 +10,15 @@
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
 
   const EN = {
+    "ไฟล์ใหญ่เกิน 5 MB ให้แบ่งเสียงเป็นไฟล์เล็กก่อน": "File exceeds 5 MB; use a smaller audio file",
+    "ไม่พบข้อความพร้อมเวลาในไฟล์นี้": "No timestamped text found in this file",
+    "บทไม่มีซับ: นำเข้าเสียงหรือซับ": "No captions: import audio or subtitles",
+    "เลือก SRT/VTT หรือไฟล์เสียงไม่เกิน 5 MB ระบบจะถอดเสียงในเครื่อง หรือส่งไป A100 ถ้าตั้งค่าไว้ ใช้เสียงที่เริ่มตรงกับวิดีโอ": "Choose SRT/VTT or audio up to 5 MB. Transcription runs locally, or on A100 if configured. Audio must start in sync with the video",
+    "นำเข้าเสียงหรือซับสำหรับบทนี้": "Import audio or subtitles for this lesson",
+    "กำลังนำเข้าและถอดเสียง กรุณารอ ...": "Importing and transcribing, please wait ...",
+    "ซับจากไฟล์ที่นำเข้า": "Imported subtitles",
+    "ถอดจากไฟล์เสียง": "Transcribed from an audio file",
+
     "กำลังตรวจแหล่งซับ": "Checking subtitle source",
     "ซับอัตโนมัติ": "Automatic captions",
     "ซับ CC": "CC captions",

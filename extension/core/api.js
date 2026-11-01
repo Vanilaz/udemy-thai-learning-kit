@@ -81,6 +81,9 @@
 
     return {
       reportError,
+      transcribe(audio_b64) {
+        return call("POST", "/asr", {audio_b64, timestamps:true}, {timeoutMs:600000});
+      },
       /** Server version and its speech engines (what each can do). */
       async health() {
         const health = await call("GET", "/health", null, { timeoutMs: 3000 });

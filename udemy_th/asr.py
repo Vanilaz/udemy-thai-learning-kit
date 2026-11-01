@@ -36,6 +36,8 @@ def status() -> dict:
             "remote": a100_voice.base_url(),
             "error": "",
         }
+    if importlib.util.find_spec("faster_whisper") is not None:
+        return {"configured": True, "ready": True, "device": "CPU (faster-whisper)"}
     missing = [m for m in ("torch", "transformers") if importlib.util.find_spec(m) is None]
     if missing:
         return {
@@ -96,7 +98,30 @@ def transcribe_bytes(
             if importlib.util.find_spec("transformers") is None:
                 raise TtsError(f"เซิร์ฟเวอร์ A100 ไม่ตอบ และในเครื่องไม่มีโมเดล Whisper ({exc})") from exc
 
+    if importlib.util.find_spec("faster_whisper") is not None:
+        return _transcribe_cpu_bytes(audio_bytes, lang=clean_lang)
     return _transcribe_local_bytes(audio_bytes, lang=clean_lang, timestamps=timestamps)
+
+
+def _transcribe_cpu_bytes(audio_bytes: bytes, *, lang: str | None) -> dict:
+    """CPU int8 keeps transcription from exhausting a 4 GB display GPU."""
+    from faster_whisper import WhisperModel
+    with _local_lock:
+        model_id = os.environ.get("UDTH_CPU_ASR_MODEL", "small")
+        key = "cpu:" + model_id
+        if key not in _local_pipes:
+            _local_pipes[key] = WhisperModel(model_id, device="cpu", compute_type="int8", cpu_threads=4)
+        with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as file:
+            file.write(audio_bytes)
+            path = Path(file.name)
+        try:
+            segments, info = _local_pipes[key].transcribe(str(path), language=lang, beam_size=5, vad_filter=True)
+            cues = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments if s.text.strip()]
+            return {"text": " ".join(c["text"] for c in cues), "lang": info.language, "cues": cues}
+        except Exception as exc:
+            raise TtsError("ถอดเสียงไม่ได้ ตรวจว่าเป็นไฟล์เสียงที่เปิดฟังได้และมีเสียงพูด (" + type(exc).__name__ + ")") from exc
+        finally:
+            path.unlink(missing_ok=True)
 
 
 def _transcribe_local_bytes(audio_bytes: bytes, *, lang: str | None, timestamps: bool) -> dict:
