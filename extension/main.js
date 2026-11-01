@@ -116,6 +116,7 @@
   async function captureAudio() {
     if (captureController) { captureController.abort(); return; }
     const video = page.video, generation = page.generation;
+    const identity = {course:site.cacheScope(), lecture:site.cacheId(), generation};
     const previousDub = store.get().dub.on;
     const controller = new AbortController();
     captureController = controller;
@@ -128,9 +129,8 @@
       const result = await captured;
       if (result.error) throw result.error;
       const blob = result.blob;
-      if (generation !== page.generation) return;
-      page.menu?.setNote(t("บันทึกแล้ว กำลังถอดเสียงและแปล กรุณารอ ..."));
-      await importTranscript(new File([blob], "lesson.webm", {type:blob.type}));
+      if (generation === page.generation) page.menu?.setNote(t("บันทึกแล้ว กำลังถอดเสียงและแปล กรุณารอ ..."));
+      await importTranscript(new File([blob], "lesson.webm", {type:blob.type}), identity);
     } catch (error) {
       const messages = {
         "capture-no-audio": t("ไม่ได้รับเสียงแท็บ เลือกแท็บ Udemy และเปิดแชร์เสียงแท็บ"),
@@ -145,8 +145,9 @@
     }
   }
 
-  async function importTranscript(file) {
-    const course = site.cacheScope(), lecture = site.cacheId(), generation = page.generation;
+  async function importTranscript(file, identity = null) {
+    const course = identity?.course || site.cacheScope(), lecture = identity?.lecture || site.cacheId();
+    const generation = identity?.generation ?? page.generation;
     if (file.size > 5 * 1024 * 1024) throw new Error(t("ไฟล์ใหญ่เกิน 5 MB ให้แบ่งเสียงเป็นไฟล์เล็กก่อน"));
     let cues, sourceLang = "", kind = "imported";
     if (/\.(srt|vtt)$/i.test(file.name)) {
@@ -161,10 +162,9 @@
       kind = "asr";
     }
     if (!cues?.length) throw new Error(t("ไม่พบข้อความพร้อมเวลาในไฟล์นี้"));
-    if (generation !== page.generation || lecture !== site.cacheId()) return;
     const key = UDTH.importedTranscript.storageKey(course, lecture);
     await chrome.storage.local.set({[key]: {ok:true, cues, sourceLang, captionKind:kind}});
-    await retranslate();
+    if (generation === page.generation && lecture === site.cacheId()) await retranslate();
   }
 
   async function retranslate() {
@@ -340,7 +340,7 @@
   }
 
   function teardown() {
-    captureController?.abort();
+    captureController?.abort("navigation");
     pagesState.generation += 1;
     stopVideoSession();
     if (page.video) page.video.removeEventListener("timeupdate", drawCaption);

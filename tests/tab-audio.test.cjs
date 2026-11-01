@@ -41,3 +41,10 @@ test('finishes before native ended can navigate to the next Udemy lesson',async(
  f.video.dispatchEvent(new Event('timeupdate'));
  const audio=await pending;assert.ok(audio.size);assert.ok(f.track.stopped);
 });
+
+test('Udemy navigation preserves captured audio instead of discarding the original lesson',async()=>{
+ const f=fixture(),controller=new AbortController();let ready;const started=new Promise(r=>ready=r);
+ const pending=captureLesson({...f.options,signal:controller.signal,onStatus:ready});await started;
+ controller.abort('navigation');
+ const audio=await pending;assert.ok(audio.size);assert.ok(f.track.stopped);
+});

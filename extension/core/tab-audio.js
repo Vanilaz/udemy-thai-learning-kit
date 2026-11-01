@@ -23,7 +23,12 @@
       }
     };
     const seek = () => fail('capture-seek');
-    const cancel = () => fail('capture-cancelled');
+    const cancel = () => {
+      // Navigation must preserve the audio already recorded for the original
+      // lesson. Explicit cancellation still discards it.
+      if (signal?.reason === 'navigation') stop();
+      else fail('capture-cancelled');
+    };
     try {
       if (!stream.getAudioTracks().length) throw new Error('capture-no-audio');
       if (signal?.aborted) throw new Error('capture-cancelled');
