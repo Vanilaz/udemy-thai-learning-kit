@@ -29,6 +29,7 @@ import math
 import os
 import re
 import sys
+import socket
 import time
 import threading
 import traceback
@@ -845,6 +846,15 @@ class _Server(ThreadingHTTPServer):
     traceback for each one, which buries the errors that actually matter under
     pages of noise about nothing.
     """
+
+    # HTTPServer enables SO_REUSEADDR, which permits multiple listeners on
+    # the same address on Windows. That leaves stale servers/models alive.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     daemon_threads = True  # never let a stuck request block Ctrl+C
 

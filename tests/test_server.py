@@ -89,6 +89,15 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/glossary")[0], 400)
         self.assertEqual(self.request("POST", "/glossary", {})[0], 404)
 
+    def test_second_server_cannot_take_the_same_listening_port(self):
+        duplicate = None
+        try:
+            with self.assertRaises(OSError):
+                duplicate = s._Server(self.httpd.server_address, self.httpd.RequestHandlerClass)
+        finally:
+            if duplicate is not None:
+                duplicate.server_close()
+
     def test_valid_input_and_missing_job(self):
         self.assertEqual(self.request("GET", "/job/missing")[0], 404)
         key = self.enqueue()

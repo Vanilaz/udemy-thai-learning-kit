@@ -1149,8 +1149,7 @@ html.udth-hide-native .ytp-caption-window-container {
   background:
     radial-gradient(circle at 50% 42%, rgba(139, 92, 246, 0.16), transparent 55%),
     rgba(5, 7, 14, 0.72);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
   font-family: var(--udth-font);
   animation: udth-gate-in 180ms ease-out;
 }
@@ -1161,6 +1160,7 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-gate-card {
+  pointer-events: auto;
   position: relative;
   display: flex;
   flex-direction: column;
