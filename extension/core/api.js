@@ -49,14 +49,21 @@
     }));
   }
 
-  function createApi(send, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  function createApi(send, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now } = {}) {
+    let offlineUntil = 0;
+    const reported = new Map();
     function reportError(message, path = "", status = 0, source = "api") {
+      const signature = JSON.stringify([source, path.split("?")[0], status, String(message)]);
+      if (reported.has(signature) && now() - reported.get(signature) < 30000) return;
+      if (reported.size >= 100) reported.delete(reported.keys().next().value);
+      reported.set(signature, now());
       // Report separately: a diagnostics failure must not recurse through call().
       Promise.resolve().then(() => send({type: "diagnostic", event: {
         source, message: String(message).slice(0, 1000), path: path.split("?")[0], status,
       }})).catch(() => {});
     }
     async function call(method, path, body = null, { timeoutMs = 25000, audio = false } = {}) {
+      if (now() < offlineUntil) throw new ApiError(t("ยังไม่ได้เปิดเซิร์ฟเวอร์ ดับเบิลคลิก start-server.cmd"), "unreachable");
       let reply;
       try {
         reply = await send({ type: "api", method, path, body, timeoutMs, audio });
@@ -69,6 +76,7 @@
         throw new ApiError(t("ส่วนขยายไม่ตอบ กด F5 รีเฟรชหน้านี้"), "extension");
       }
       if (reply.unreachable) {
+        offlineUntil = now() + 10000;
         reportError("Local server unreachable", path);
         throw new ApiError(t("ยังไม่ได้เปิดเซิร์ฟเวอร์ ดับเบิลคลิก start-server.cmd"), "unreachable");
       }

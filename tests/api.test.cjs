@@ -176,3 +176,19 @@ test('imported audio uses ASR with timestamps and a long transcription timeout',
  assert.deepEqual(request.body,{audio_b64:'YXVkaW8=',timestamps:true});
  assert.equal(result.lang,'es');
 });
+
+
+test('offline polling backs off and duplicate diagnostics do not flood storage', async () => {
+ let time=0,calls=0,events=0,online=false;
+ const api=createApi(async message=>{
+  if(message.type==='diagnostic'){events++;return {ok:true};}
+  calls++;
+  return online?{ok:true,data:{voices:[]}}:{ok:false,unreachable:true};
+ },{now:()=>time});
+ for(let i=0;i<20;i++)await assert.rejects(api.health(),ApiError);
+ await new Promise(setImmediate);
+ assert.equal(calls,1);assert.equal(events,1);
+ time=11000;await assert.rejects(api.health(),ApiError);
+ await new Promise(setImmediate);assert.equal(calls,2);assert.equal(events,1);
+ online=true;time=22000;await api.health();assert.equal(calls,3);
+});
