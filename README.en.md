@@ -86,6 +86,13 @@ Udemy has two kinds of Thai subtitles, and their quality differs a lot. This too
 - **Auto-generated** (`auto`) → **Retranslated.** It's a machine translation layered on top of a machine transcription —
   errors compound twice. For example, if the transcription mis-hears "async" as "a sink", it will faithfully translate that as "อ่างล้างจาน" ("sink / wash basin").
 
+## Updating an existing installation
+
+Run `install.cmd --no-gpu` to update core packages, including `edge-tts>=7.3.1` (fixes the Edge speech HTTP 403 seen with 7.2.8).
+Keep your existing `.env`; compare it with `.env.example` and copy only the options you need. Never overwrite a configured file containing your keys.
+The new example disables GPU model preload and sets API concurrency to 3 for ordinary machines; these example values do not change an existing installation automatically.
+Then stop the old server, start it once, reload the extension, and refresh the lesson. Choose Niwat if Premwadee returns no audio for some text.
+
 ## Translation quality and caption sources
 
 The player menu shows the caption language, CC/automatic type, and a warning when using a fallback track.

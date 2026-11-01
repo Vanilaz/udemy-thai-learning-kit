@@ -213,15 +213,21 @@ def main() -> int:
     step(5, "ตรวจตัวแปลภาษา")
     agy = find_agy()
     translator_ok = True
-    if agy:
+    api_names = ("UDTH_LLM_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE", "OLLAMA_HOST")
+    if any(env_has(name) for name in api_names):
+        say("  ✓ พบการตั้งค่า OpenAI-compatible API — ตรวจการเชื่อมต่อจริงเมื่อเริ่มแปล")
+        if agy:
+            say(f"  ✓ พบ Antigravity CLI สำหรับสำรอง: {agy}")
+    elif agy:
         say(f"  ✓ พบ Antigravity CLI: {agy}")
     elif env_has("ANTHROPIC_API_KEY"):
         say("  ✓ พบ ANTHROPIC_API_KEY — เปิดเซิร์ฟเวอร์ด้วย engine claude")
     else:
         translator_ok = False
         say("  ! ยังไม่มีตัวแปล — ซับไทยจะยังแปลไม่ได้จนกว่าจะทำอย่างใดอย่างหนึ่ง:")
-        say("      ก) ติดตั้ง Antigravity จาก https://antigravity.google แล้วล็อกอิน")
-        say("      ข) ใส่ ANTHROPIC_API_KEY=... ในไฟล์ .env")
+        say("      ก) ตั้ง UDTH_LLM_URL และ key/โมเดลของ router ใน .env (ดู docs/translation-quality.md)")
+        say("      ข) ติดตั้ง Antigravity จาก https://antigravity.google แล้วล็อกอิน")
+        say("      ค) ใส่ ANTHROPIC_API_KEY=... ในไฟล์ .env")
 
     step(6, "ติดตั้ง Extension เข้า Chrome / Edge")
     extension = ROOT / "extension"

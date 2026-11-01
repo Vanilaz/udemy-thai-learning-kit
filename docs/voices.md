@@ -47,6 +47,12 @@
 
 ## edge — แนะนำสำหรับคอร์สยาว (ไม่ต้องใช้ GPU)
 
+ใช้ `edge-tts>=7.3.1` ตาม `requirements.txt` หากขึ้น 403 จาก `speech.platform.bing.com`
+ให้รัน `install.cmd --no-gpu` แล้วปิดและเปิดเซิร์ฟเวอร์ใหม่
+ถ้าเสียง Premwadee ไม่ส่งเสียงกลับมาเป็นบางข้อความ ให้เลือก Niwat
+ค่าตัวอย่าง `.env.example` ปิด preload GPU ไว้ เสียง Edge เลือกจากเมนูในส่วนขยาย
+
+
 ```cmd
 python -m pip install -r requirements.txt
 ```

@@ -9,7 +9,7 @@ anthropic>=0.104.0
 # เสียงพากย์ไทย
 #   edge-tts  ฟรีไม่จำกัด ไม่ต้องมี key   <- แนะนำ
 #   google    คุณภาพสูงสุด แต่มีโควต้าและต้องผูกบัญชี Google Cloud
-edge-tts>=7.0.0
+edge-tts>=7.3.1
 google-cloud-texttospeech>=2.33.0
 
 # เสียงพากย์ AI บนการ์ดจอ (SeamlessM4T / OmniVoice) แยกไว้ที่ requirements-gpu.txt

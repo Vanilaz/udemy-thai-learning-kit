@@ -391,12 +391,13 @@ def _serve_engine(requested: str | None) -> str:
     import os
 
     from .translate_agy import AgyNotFound, find_agy
+    from .translate_llm import configured as llm_configured
 
     try:
         find_agy()
         return "agy"
     except AgyNotFound:
-        if os.environ.get("UDTH_LLM_URL"):
+        if llm_configured():
             return "agy"  # the LLM translates; agy is only its (missing) fallback
         if os.environ.get("ANTHROPIC_API_KEY"):
             print("  ไม่พบ agy CLI — ใช้ Claude (ANTHROPIC_API_KEY) แปลแทน", flush=True)

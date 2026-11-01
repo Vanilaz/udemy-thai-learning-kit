@@ -1,4 +1,4 @@
-# คู่มือผู้ใช้งาน ฮองเรียน (HongRian) v1.4.0
+# คู่มือผู้ใช้งาน ฮองเรียน (HongRian) v1.4.1
 
 คู่มือฉบับนี้อธิบายการใช้งานระบบแปลซับและพากย์เสียงภาษาไทยสำหรับคอร์สออนไลน์บน **Udemy** และ **YouTube** รวมถึงการเชื่อมต่อ **Colab A100 GPU** สำหรับโมเดลพากย์เสียงไทย (**ThonburianTTS megaF5**, **OpenJaiTTS v1.0**, **OmniVoice Thai**, **Meta SeamlessM4T-v2-large**) และระบบถอดเสียงอัตโนมัติ (**Thai Whisper Large-v3 Combined / Whisper Large-v3 Turbo**)
 
