@@ -33,3 +33,11 @@ test('cancelling or seeking discards the capture rather than importing misaligne
   await assert.rejects(pending,/capture-(cancelled|seek)/);assert.ok(f.track.stopped);
  }
 });
+
+test('finishes before native ended can navigate to the next Udemy lesson',async()=>{
+ const f=fixture();let ready;const started=new Promise(r=>ready=r);
+ const pending=captureLesson({...f.options,onStatus:ready});await started;
+ f.video.currentTime=9.5;
+ f.video.dispatchEvent(new Event('timeupdate'));
+ const audio=await pending;assert.ok(audio.size);assert.ok(f.track.stopped);
+});

@@ -14,6 +14,14 @@
     const fail = message => { error = new Error(message); stop(); };
     const pause = () => { if (recorder?.state === 'recording') recorder.pause(); };
     const play = () => { if (recorder?.state === 'paused') recorder.resume(); };
+    // Stop before Udemy's ended handler navigates to the next lesson.
+    // timeupdate runs before the native ended event; omit at most 0.6s.
+    const nearEnd = () => {
+      if (video.duration - video.currentTime <= 0.6) {
+        stop();
+        video.pause();
+      }
+    };
     const seek = () => fail('capture-seek');
     const cancel = () => fail('capture-cancelled');
     try {
@@ -44,6 +52,7 @@
       video.addEventListener('play', play);
       video.addEventListener('seeking', seek);
       video.addEventListener('ended', stop);
+      video.addEventListener('timeupdate', nearEnd);
       signal?.addEventListener('abort', cancel);
       stream.getTracks().forEach(track => track.addEventListener('ended', cancel));
       recorder.start(1000);
@@ -60,6 +69,7 @@
       video.removeEventListener('play', play);
       video.removeEventListener('seeking', seek);
       video.removeEventListener('ended', stop);
+      video.removeEventListener('timeupdate', nearEnd);
       signal?.removeEventListener('abort', cancel);
       stream.getTracks().forEach(track => track.stop());
       video.pause();
