@@ -348,4 +348,12 @@ store.load().then(async (settings) => {
   refreshLecture();
 });
 refreshQueue();
-setInterval(refreshQueue, 2000);
+const reconnectServer = UDTH.reconnect.createReconnect(async () => {
+  await refreshServer();
+  if (store.get()) render(store.get());
+  await refreshLecture();
+});
+setInterval(() => {
+  refreshQueue();
+  reconnectServer().catch(() => {});
+}, 2000);
