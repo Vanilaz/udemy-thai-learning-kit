@@ -76,6 +76,19 @@ class ServerTests(unittest.TestCase):
             s._run_job(key, *s._job_args[key])
         return translate
 
+    def test_course_glossary_is_isolated_and_read_only(self):
+        from udemy_th.glossary import Glossary, course_glossary_path
+        from udemy_th.models import Term
+        vocabulary = Glossary(course_glossary_path(self.root / "glossary.json", "test"))
+        vocabulary.add(Term("N-tier", "หลายชั้น", "แยกหน้าที่ของระบบ"))
+        vocabulary.save()
+        code, data, _ = self.request("GET", "/glossary?course=test")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["terms"][0]["term"], "N-tier")
+        self.assertEqual(self.request("GET", "/glossary?course=other")[1]["terms"], [])
+        self.assertEqual(self.request("GET", "/glossary")[0], 400)
+        self.assertEqual(self.request("POST", "/glossary", {})[0], 404)
+
     def test_valid_input_and_missing_job(self):
         self.assertEqual(self.request("GET", "/job/missing")[0], 404)
         key = self.enqueue()

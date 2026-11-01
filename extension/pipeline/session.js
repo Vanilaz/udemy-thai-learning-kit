@@ -51,6 +51,7 @@
     let notice = "";
     let skipped = false;
     let timeline = null;
+    let sourceInfo = null;
     let dubber = null;
     let voice = null;
     let engines = [];
@@ -362,6 +363,12 @@
           emit({ phase, reason: transcript.code });
           return;
         }
+        sourceInfo = {
+          language: transcript.sourceLang || "",
+          courseLanguage: transcript.courseLang || "",
+          kind: transcript.captionKind || "unknown",
+          fallback: Boolean(transcript.usingFallback),
+        };
         timeline = createTimeline(transcript.cues, { lang: transcript.sourceLang || "EN" });
         try {
           engines = await api.engines();
@@ -396,6 +403,8 @@
       captionAt(time) {
         return timeline ? timeline.captionAt(time) : null;
       },
+
+      get sourceInfo() { return sourceInfo ? { ...sourceInfo } : null; },
 
       get sourceLang() {
         return timeline ? timeline.lang : "";

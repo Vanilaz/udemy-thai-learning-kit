@@ -38,6 +38,15 @@
     return { text: t("ในเบราว์เซอร์"), kind: "browser" };
   }
 
+  function describeSource(info) {
+    if (!info || !info.language) return t("กำลังตรวจแหล่งซับ");
+    let language = info.language;
+    try { language = new Intl.DisplayNames([UDTH.i18n.lang()], { type: "language" }).of(info.language.toLowerCase()); } catch {}
+    const kind = info.kind === "auto" ? t("ซับอัตโนมัติ") : info.kind === "cc" ? t("ซับ CC") : t("ไม่ทราบชนิดซับ");
+    const origin = info.fallback ? t("ซับสำรอง อาจผ่านการแปลมาแล้ว") : info.courseLanguage ? t("ตรงกับภาษาที่คอร์สระบุ") : t("ยังไม่ยืนยันภาษาที่ผู้สอนพูด");
+    return `${language} · ${kind} · ${origin}`;
+  }
+
   function menuHtml(version) {
     return (
       '<div class="udth-menu-head">' +
@@ -52,6 +61,9 @@
       '<button type="button" data-udth="lang" data-val="en" lang="en">EN</button></div>' +
       `<button type="button" class="udth-icon-btn" data-udth="close" aria-label="${t("ปิดเมนู")}">` +
       icon('<path d="M18 6 6 18M6 6l12 12"/>', 18) + "</button></div>" +
+      '<div class="udth-source-note" data-udth="sourceInfo" role="status"></div>' +
+      '<details class="udth-course-terms"><summary>' + t("ศัพท์ประจำคอร์ส") + '</summary>' +
+      '<p>' + t("ระบบรวบรวมศัพท์ให้อัตโนมัติ ไม่ต้องแก้เอง") + '</p><div data-udth="terms"></div></details>' +
       '<div class="udth-group udth-dub-group udth-power-group">' +
       '<button type="button" class="udth-dubrow" data-udth="active" aria-pressed="false">' +
       '<span class="udth-dubrow-ico">' +
@@ -132,7 +144,7 @@
    * @param {(() => Promise<{ok:boolean,error?:string}>)|null} deps.onTranslateSection
    * @param {(open: boolean) => void} [deps.onToggle]
    */
-  function createMenu({ site, video, store, engines, a100 = () => false, refreshEngines, sourceLang, serverIssue, onRetranslate,
+  function createMenu({ site, video, store, engines, a100 = () => false, refreshEngines, sourceLang, sourceInfo = () => null, glossary = async () => ({ count: 0, terms: [] }), serverIssue, onRetranslate,
     onTranslateSection, onToggle = () => {} }) {
     let button = null;
     let el = null;
@@ -255,6 +267,29 @@
       el.lang = UDTH.i18n.lang();
       builtIn = UDTH.i18n.lang();
       el.innerHTML = menuHtml(version);
+      const termsPanel = el.querySelector(".udth-course-terms");
+      let loadingTerms = false;
+      termsPanel.addEventListener("toggle", async () => {
+        if (!termsPanel.open || loadingTerms) return;
+        loadingTerms = true;
+        const body = el.querySelector('[data-udth="terms"]');
+        body.textContent = t("กำลังโหลดศัพท์");
+        try {
+          const data = await glossary();
+          const title = document.createElement("p");
+          title.textContent = data.count ? t("แสดง {shown} จาก {count} คำ", { shown: data.terms.length, count: data.count }) : t("ศัพท์จะปรากฏเมื่อแปลบทเรียนใหม่เสร็จ");
+          const list = document.createElement("dl");
+          for (const term of data.terms) {
+            const word = document.createElement("dt");
+            const meaning = document.createElement("dd");
+            word.textContent = term.term;
+            meaning.textContent = [term.thai, term.explanation].filter(Boolean).join(" — ");
+            list.append(word, meaning);
+          }
+          body.replaceChildren(title, list);
+        } catch (error) { body.textContent = String(error.message || error); }
+        finally { loadingTerms = false; }
+      });
       host.appendChild(el);
       wire(button);
       wire(el);
@@ -395,7 +430,8 @@
       if (!open) return;
 
       // "EN-US" -> "EN": the language matters to the viewer, not the region.
-      $("src").textContent = (sourceLang() || "EN").split("-")[0].toUpperCase();
+      $("src").textContent = (sourceLang() || "?").split("-")[0].toUpperCase();
+      $("sourceInfo").textContent = describeSource(sourceInfo());
       const hwBadge = $("hwBadge");
       if (hwBadge) {
         const hasServer = engines().length > 0 && !serverIssue();
@@ -466,5 +502,6 @@
     };
   }
 
-  UDTH.menu = { createMenu };
+  UDTH.menu = { createMenu, describeSource };
+  if (typeof module !== "undefined") module.exports = UDTH.menu;
 })();

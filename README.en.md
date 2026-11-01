@@ -86,10 +86,39 @@ Udemy has two kinds of Thai subtitles, and their quality differs a lot. This too
 - **Auto-generated** (`auto`) → **Retranslated.** It's a machine translation layered on top of a machine transcription —
   errors compound twice. For example, if the transcription mis-hears "async" as "a sink", it will faithfully translate that as "อ่างล้างจาน" ("sink / wash basin").
 
+## Translation quality and caption sources
+
+The player menu shows the caption language, CC/automatic type, and a warning when using a fallback track.
+Udemy captions matching the course language take priority, including automatic captions, over English captions.
+A match refers to course metadata; it does not prove what language the instructor speaks. Unrelated tracks are not picked arbitrarily.
+
+OpenAI-compatible API translations now receive a second text review before each chunk is published, for both subtitles and articles.
+It checks terminology, meaning and completeness. Reviews with missing sections/IDs, changed numbers, or missing inline code/URLs are rejected.
+If review fails, the first translation is retained and the server logs the failure. Set `UDTH_LLM_REVIEW=0` to disable the extra pass.
+This adds API requests and waiting time. The agy fallback and Claude paths do not run this API review.
+No automatic audio verification is included, and a second text pass cannot guarantee a faulty source caption is correct.
+
+Existing cached translations are retained. Choose **Retranslate** to review an existing lesson and populate its course vocabulary.
+Mixed-language article text is supported while keeping links, markup and inline code. Captions use a more compact, lower overlay.
+
+For 9router, add the following to your local `.env` (never commit a real key):
+
+```ini
+UDTH_LLM_URL=http://localhost:20128/v1
+UDTH_LLM_KEY=your-router-key
+# Copy an exact model ID from your router, or omit to discover the first /models entry.
+#UDTH_LLM_MODEL=your-model-id
+UDTH_LLM_PARALLEL=3
+UDTH_LLM_REVIEW=1
+```
+
+Restart the server, reload the extension, and refresh the lesson after updating.
+See the [detailed translation quality guide (Thai)](docs/translation-quality.md).
+
 ## What this tool doesn't do
 
 - ❌ Doesn't download videos from Udemy
-- ❌ Doesn't transcribe audio from video — the lecture must already have English captions
+- ❌ The extension does not automatically transcribe video audio — it needs original-language captions or an English fallback. The separate `asr` command can transcribe a local file.
 - ❌ Doesn't work with courses you haven't bought
 
 ---
@@ -336,7 +365,9 @@ Then `python -m udemy_th build work/my-course/05-closures`
 
 ## Highlight: the glossary keeps translations consistent across the whole course
 
-Every time something is translated, the technical terms it finds are saved to `glossary/glossary.json`,
+The server saves learned terms separately for each course in `glossary/by-course/<course-hash>.json`.
+Open **Course vocabulary** in the player menu to read the terms and Thai explanations.
+The CLI and export commands below still use the shared `glossary/glossary.json`;
 and the next lecture is fed this glossary back in before it's translated.
 
 The result is that `closure` in lecture 40 is translated with the same word as in lecture 3, instead of a different word every lecture the way Google Translate would.
@@ -362,7 +393,7 @@ Open a lecture on Udemy
    │      │
    │      ├─ Has human Thai captions ──► Tell the user to press CC, then stop
    │      │
-   │      └─ None / only auto ──► Fetch the whole English WebVTT file
+   │      └─ None / only auto ──► Prefer course-language WebVTT, then English fallback
    │                                      │
    ▼                                      ▼
 Show Thai subtitles over the video  ◄────  Your local server (127.0.0.1:8765)

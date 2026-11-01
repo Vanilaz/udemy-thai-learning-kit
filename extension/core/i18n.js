@@ -10,6 +10,19 @@
   const UDTH = (globalThis.UDTH = globalThis.UDTH || {});
 
   const EN = {
+    "กำลังตรวจแหล่งซับ": "Checking subtitle source",
+    "ซับอัตโนมัติ": "Automatic captions",
+    "ซับ CC": "CC captions",
+    "ไม่ทราบชนิดซับ": "Caption type unknown",
+    "ซับสำรอง อาจผ่านการแปลมาแล้ว": "Fallback captions; may already be translated",
+    "ตรงกับภาษาที่คอร์สระบุ": "Matches the course language",
+    "ยังไม่ยืนยันภาษาที่ผู้สอนพูด": "Spoken language not confirmed",
+    "ศัพท์ประจำคอร์ส": "Course vocabulary",
+    "ระบบรวบรวมศัพท์ให้อัตโนมัติ ไม่ต้องแก้เอง": "Vocabulary is collected automatically; no editing needed",
+    "กำลังโหลดศัพท์": "Loading vocabulary",
+    "แสดง {shown} จาก {count} คำ": "Showing {shown} of {count} terms",
+    "ศัพท์จะปรากฏเมื่อแปลบทเรียนใหม่เสร็จ": "Vocabulary appears after a new lesson is translated",
+
     // ---- product
     "ฮองเรียน": "HongRian",
     "ไทย": "Thai",
@@ -165,14 +178,14 @@
     "กำลังแปลคำสั่ง Assignment ...{progress}": "Translating the assignment ...{progress}",
     "กำลังแปลแบบทดสอบ {count} ข้อเป็นไทย ...": "Translating {count} quiz questions into Thai ...",
     "กำลังแปลแบบทดสอบ ...{progress}": "Translating the quiz ...{progress}",
-    "แปลแล้ว {count} ข้อความ — คำแปลไทยจะขึ้นใต้ข้อความอังกฤษ":
+    "แปลแล้ว {count} ข้อความ — คำแปลไทยจะขึ้นใต้ข้อความต้นฉบับ":
       "Translated {count} texts. The Thai appears under the English",
     "กำลังแปลเอกสาร {count} ย่อหน้าเป็นไทย ...": "Translating {count} paragraphs into Thai ...",
     "กำลังแปลเอกสาร ...{progress}": "Translating the article ...{progress}",
     "ฉบับแปลไทย": "Thai translation",
     "ฉบับแปลไทย ({count} ย่อหน้า)": "Thai translation ({count} paragraphs)",
-    "ดูต้นฉบับอังกฤษ": "Show the English original",
-    "ซ่อนต้นฉบับอังกฤษ": "Hide the English original",
+    "ดูต้นฉบับ": "Show the original",
+    "ซ่อนต้นฉบับ": "Hide the original",
     "เปิดบทเรียนสักบทก่อน แล้วค่อยสั่งแปลทั้ง Section": "Open a lecture first, then translate its section",
     "กำลังอ่านรายการบทเรียนใน Section ...": "Reading the lectures in this section ...",
     "หา Section ของบทเรียนนี้ไม่เจอ": "Could not find this lecture's section",

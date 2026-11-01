@@ -34,13 +34,13 @@ import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, parse_qs
 
 from .build import _parse_subtitles, _parse_terms, _split_sections
 from . import __version__
 from .env import ENV_PATH, LOADED as ENV_LOADED
 from . import loudness
-from .glossary import Glossary
+from .glossary import Glossary, course_glossary_path
 from .models import Lesson, Segment
 from .google_tts import TtsError
 from .tts import TtsRegistry
@@ -281,6 +281,19 @@ class _Handler(BaseHTTPRequestHandler):
                     "asr": asr.status(),
                 },
             )
+            return
+        if path == "/glossary":
+            course = parse_qs(urlparse(self.path).query).get("course", [""])[0]
+            if not course or len(course) > 512:
+                self._send(400, {"error": "course is required (max 512 characters)"})
+                return
+            with _cv:
+                glossary = Glossary(course_glossary_path(self.glossary_path, course))
+                terms = sorted(glossary.terms.values(), key=lambda term: term.term.lower())
+            self._send(200, {"count": len(terms), "terms": [
+                {"term": term.term, "thai": term.thai, "explanation": term.explanation}
+                for term in terms[:200]
+            ]})
             return
         if path == "/voices":
             self._send(200, {"engines": self.tts.catalogue()})
@@ -718,6 +731,7 @@ def _run_job(
         segments = [s for s in segments if s.text]
         lesson = Lesson(slug=key, title=title, course=course, segments=segments)
 
+        glossary_path = course_glossary_path(glossary_path, course)
         glossary = Glossary(glossary_path)
 
         # Publish each chunk the moment it lands, so the page can start showing
@@ -891,7 +905,10 @@ def _translate(
     # answers any chunk it cannot, so a dropped Colab never stops a lecture.
     run_chunk, parallel, chunk_chars = None, None, None
     if translate_llm.configured():
-        run_chunk = translate_llm.with_fallback(translate_llm.runner(), agy_runner(effort))
+        primary = translate_llm.runner()
+        if os.environ.get("UDTH_LLM_REVIEW", "1").lower() not in ("0", "off", "false"):
+            primary = translate_llm.with_review(primary)
+        run_chunk = translate_llm.with_fallback(primary, agy_runner(effort))
         parallel, chunk_chars = translate_llm.PARALLEL, translate_llm.CHUNK_CHARS
 
     return translate_text(

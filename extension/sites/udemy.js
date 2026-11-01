@@ -91,7 +91,7 @@
 
   function pickCaption(captions, prefix) {
     const matches = captions.filter((c) =>
-      new RegExp(`^${prefix}`, "i").test(c.locale_id || "")
+      c.url && (c.locale_id || "").split(/[_-]/)[0].toLowerCase() === prefix.toLowerCase()
     );
     if (!matches.length) return null;
     // A human-made caption beats an auto-generated one.
@@ -150,19 +150,17 @@
     const thai = pickCaption(captions, "th");
     if (thai && thai.source === "manual") return { ok: false, code: "native-thai" };
 
-    // Translate from the language the instructor actually speaks. Udemy's
-    // `source` cannot tell a transcription from a machine translation (both
-    // are "auto"), but the course locale can: a track in that language is the
-    // instructor's own words. English stays the fallback it always was.
-    const spoken = (asset.locale || "en").split(/[_-]/)[0].toLowerCase();
-    const original = pickCaption(captions, spoken);
+    // Course locale is evidence of the spoken language; manual/auto alone
+    // cannot establish whether a caption is a translation.
+    const spoken = (asset.locale || "").split(/[_-]/)[0].toLowerCase();
+    const original = spoken ? pickCaption(captions, spoken) : null;
     const english = pickCaption(captions, "en");
-    const others = captions.filter((c) => c.url && !/^th/i.test(c.locale_id || ""));
-    const source =
-      [original, english].find((c) => c && c.url && c.source === "manual") ||
-      [original, english].find((c) => c && c.url) ||
-      others[0];
+    const source = original || english;
     if (!source) return { ok: false, code: "no-english" };
+    const usingFallback = !original;
+    if (usingFallback) {
+      log("ไม่พบซับภาษาต้นฉบับของคอร์ส — ใช้ซับอังกฤษสำรอง ซึ่งอาจผ่านการแปลมาแล้ว", asset.locale || "ไม่ทราบภาษา");
+    }
 
     const vtt = await fetch(source.url).then((r) => (r.ok ? r.text() : null));
     if (!vtt) return { ok: false, code: "caption-fetch-failed" };
@@ -170,8 +168,8 @@
     const cues = parseVtt(vtt);
     if (!cues.length) return { ok: false, code: "caption-parse-failed" };
     const sourceLang = (source.locale_id || "en").replace("_", "-").toUpperCase();
-    if (sourceLang.slice(0, 2) !== "EN") log("ภาษาต้นฉบับของคอร์ส:", asset.locale, "→ ใช้ซับ", source.locale_id);
-    return { ok: true, cues, replacingAutoThai: !!thai, sourceLang };
+    log("ภาษาที่คอร์สระบุ:", asset.locale || "ไม่ทราบ", "→ ใช้ซับ", source.locale_id);
+    return { ok: true, cues, replacingAutoThai: !!thai, sourceLang, usingFallback, captionKind: source.source === "auto" ? "auto" : source.source === "manual" ? "cc" : "unknown", courseLang: asset.locale || "" };
   }
 
   function articleCues(asset) {
@@ -181,7 +179,17 @@
     const holder = document.createElement("div");
     holder.innerHTML = asset.body;
 
-    const blocks = collectBlocks(holder).filter((el) => !isCodeBlock(el));
+    // Translate text nodes so links, inline code and formatting survive.
+    // Walking all text also includes bare text and div/span-only articles.
+    holder.querySelectorAll("script,style,iframe,object,embed").forEach((el) => el.remove());
+    const blocks = [];
+    const walk = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walk.nextNode())) {
+      if (!node.textContent.trim()) continue;
+      if (node.parentElement?.closest("pre,code,kbd,samp,script,style")) continue;
+      blocks.push(node);
+    }
     if (!blocks.length) return { ok: false, code: "code-only" };
 
     return {

@@ -338,6 +338,8 @@
       a100: () => serverA100,
       refreshEngines,
       sourceLang: () => (page.session ? page.session.sourceLang : ""),
+      sourceInfo: () => (page.session ? page.session.sourceInfo : null),
+      glossary: () => api.glossary(site.cacheScope()),
       serverIssue: () => serverIssue,
       onRetranslate: retranslate,
       onTranslateSection: pages && site.supportsSection ? () => pages.translateSection() : null,

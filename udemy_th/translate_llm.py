@@ -25,6 +25,8 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 
+from . import __version__
+
 Runner = Callable[[str, str], str]
 
 # Transcript characters per chunk.
@@ -114,7 +116,7 @@ def _request(url: str, key: str, body: dict | None, timeout: float) -> dict:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = urllib.request.Request(url, data=data, method="POST" if body is not None else "GET")
     request.add_header("Content-Type", "application/json")
-    request.add_header("User-Agent", "udemy-thai-learning-kit/1.3.0")
+    request.add_header("User-Agent", f"udemy-thai-learning-kit/{__version__}")
     if key:
         request.add_header("Authorization", f"Bearer {key}")
     try:
@@ -237,3 +239,8 @@ def with_fallback(
         return fallback(prompt, label)
 
     return run
+
+
+def with_review(run: Runner) -> Runner:
+    from .translation_review import reviewed_runner
+    return reviewed_runner(run)

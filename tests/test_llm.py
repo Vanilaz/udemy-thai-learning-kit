@@ -42,9 +42,10 @@ class FakeOpenAI(BaseHTTPRequestHandler):
             self._reply(200, {"data": [{"id": "scb10x/typhoon2.1-gemma3-12b"}]})
 
     def do_POST(self):
+        raw = self.rfile.read(int(self.headers["Content-Length"]))
         if not self._authorised():
             return
-        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        body = json.loads(raw)
         FakeOpenAI.requests.append(body)
         prompt = body["messages"][0]["content"]
         # Answer every line id in the prompt, the way the real model does.
@@ -63,6 +64,7 @@ class LlmTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
 
     def setUp(self):
         FakeOpenAI.requests = []
@@ -173,6 +175,7 @@ class LlmTests(unittest.TestCase):
         class SseServer(BaseHTTPRequestHandler):
             def log_message(self, *a): pass
             def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
@@ -187,6 +190,7 @@ class LlmTests(unittest.TestCase):
             self.assertEqual(ans, "## SUBTITLES\n[[1]] คำแปล")
         finally:
             server.shutdown()
+            server.server_close()
 
     def test_runner_falls_back_to_secondary_model_on_error(self):
         calls = []
@@ -221,6 +225,7 @@ class LlmTests(unittest.TestCase):
             self.assertTrue(any("สลับไปใช้โมเดลสำรอง" in l for l in logs))
         finally:
             server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

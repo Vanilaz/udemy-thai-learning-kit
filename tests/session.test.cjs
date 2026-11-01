@@ -366,3 +366,14 @@ test('pressing play after seeking while paused waits for the dub there too', asy
   assert.equal(last().phase, 'playing', 'our own resume does not hold again');
   assert.equal(video.paused, false);
 });
+
+
+test('source provenance survives loading and cannot be mutated by the menu', async () => {
+  const api = controllableApi();
+  const {session} = setup({api: api.api, transcript: {ok:true, cues, sourceLang:'EN-US', courseLang:'es_ES', captionKind:'auto', usingFallback:true}});
+  await session.start();
+  assert.deepEqual(session.sourceInfo, {language:'EN-US', courseLanguage:'es_ES', kind:'auto', fallback:true});
+  session.sourceInfo.language = 'fake';
+  assert.equal(session.sourceInfo.language, 'EN-US');
+  session.dispose();
+});

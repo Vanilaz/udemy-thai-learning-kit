@@ -260,7 +260,7 @@
     state.status = "ready";
     setQuizBanner(
       banner,
-      t("แปลแล้ว {count} ข้อความ — คำแปลไทยจะขึ้นใต้ข้อความอังกฤษ", { count: state.quizMap.size }),
+      t("แปลแล้ว {count} ข้อความ — คำแปลไทยจะขึ้นใต้ข้อความต้นฉบับ", { count: state.quizMap.size }),
       "ok"
     );
     watchQuizDom();
@@ -405,7 +405,12 @@
     translations = translations || [];
     blocks.forEach((el, n) => {
       const th = translations[n] && translations[n].th;
-      if (th) el.textContent = th;
+      if (th) {
+        const original = el.textContent || "";
+        const leading = original.match(/^\s*/)[0];
+        const trailing = original.match(/\s*$/)[0];
+        el.textContent = leading + th.trim() + trailing;
+      }
     });
 
     state.status = "ready";
@@ -422,7 +427,7 @@
     panel.innerHTML =
       '<div class="udth-doc-bar">' +
       `<span class="udth-doc-title">${t("ฉบับแปลไทย")}</span>` +
-      `<button type="button" class="udth-doc-toggle">${t("ดูต้นฉบับอังกฤษ")}</button>` +
+      `<button type="button" class="udth-doc-toggle">${t("ดูต้นฉบับ")}</button>` +
       "</div>" +
       '<div class="udth-doc-body"></div>';
     container.parentElement.insertBefore(panel, container);
@@ -450,7 +455,7 @@
     toggle.onclick = () => {
       const showingOriginal = original.style.display !== "none";
       original.style.display = showingOriginal ? "none" : "";
-      toggle.textContent = showingOriginal ? t("ดูต้นฉบับอังกฤษ") : t("ซ่อนต้นฉบับอังกฤษ");
+      toggle.textContent = showingOriginal ? t("ดูต้นฉบับ") : t("ซ่อนต้นฉบับ");
     };
   }
 

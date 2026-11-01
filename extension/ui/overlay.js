@@ -89,16 +89,19 @@
         const boxRect = box.getBoundingClientRect();
         if (!boxRect.height) return;
         const showing = controlsShowing();
-        let lift = Math.max(18, boxRect.height * 0.045);
+        let lift = Math.max(8, Math.min(14, boxRect.height * 0.018));
         if (showing) {
-          lift = boxRect.height * 0.09;
+          lift = Math.min(56, boxRect.height * 0.08);
           const bar = site.controlBar && site.controlBar();
           if (bar) {
             const r = bar.getBoundingClientRect();
-            if (r.height && r.bottom > boxRect.top) lift = Math.max(lift, boxRect.bottom - r.top + 18);
+            // Ignore wrappers spanning the whole player: they are not a control bar.
+            if (r.height && r.height < boxRect.height * 0.25 && r.top > boxRect.top + boxRect.height * 0.5) {
+              lift = Math.max(lift, boxRect.bottom - r.top + 6);
+            }
           }
         }
-        lift = Math.min(lift, boxRect.height * 0.45);
+        lift = Math.min(lift, boxRect.height * 0.25);
         overlay.style.bottom = `${Math.round(lift)}px`;
         overlay.classList.toggle("udth-raised", showing);
       });

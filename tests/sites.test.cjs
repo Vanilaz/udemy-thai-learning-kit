@@ -5,12 +5,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 // Load a site script into a sandbox with just the browser bits it touches.
-function loadSites({fetchText = {}} = {}) {
+function loadSites({fetchText = {}, articleNodes = []} = {}) {
   const context = vm.createContext({
     console, URL, setTimeout, clearTimeout, Intl,
+    NodeFilter: {SHOW_TEXT: 4},
     location: {hostname: 'www.udemy.com', pathname: '/course/x/learn/lecture/1', href: 'https://www.udemy.com/course/x/learn/lecture/1'},
     // sites.js keeps a <textarea> for decoding HTML entities in YouTube captions.
-    document: {querySelector: () => null, querySelectorAll: () => [], createElement: () => ({})},
+    document: {querySelector: () => null, querySelectorAll: () => [], createElement: () => ({querySelectorAll: () => []}), createTreeWalker: () => { let n = 0; return {nextNode: () => articleNodes[n++] || null}; }},
     chrome: {runtime: {sendMessage: async () => ({})}},
     fetch: async (url) => ({ok: url in fetchText, text: async () => fetchText[url]}),
   });
@@ -78,4 +79,34 @@ test('Udemy: a lecture with no usable captions says so', async () => {
   const UDTH = loadSites();
   const result = await UDTH.udemy.videoCues({locale: 'en_US', captions: []});
   assert.deepEqual({...result}, {ok: false, code: 'no-english'});
+});
+
+
+test('Udemy articles: include mixed languages and bare text while excluding inline code', () => {
+  const text = (value, code = false) => ({textContent: value, parentElement: {closest: () => code ? {} : null}});
+  const nodes = [text('こんにちは'), text('Hola mundo'), text('สวัสดี'), text('var x = 1;', true), text('   ')];
+  const UDTH = loadSites({articleNodes: nodes});
+  const built = UDTH.udemy.articleCues({body: '<div>article</div>'});
+  assert.equal(built.ok, true);
+  assert.deepEqual(Array.from(built.cues, c => c.text), ['こんにちは', 'Hola mundo', 'สวัสดี']);
+  assert.equal(built.blocks[0], nodes[0], 'keep text nodes so updating translations preserves their parent markup');
+  assert.equal(nodes[3].textContent, 'var x = 1;');
+});
+
+
+test('Udemy: original automatic captions beat English manual captions', async () => {
+  const UDTH = loadSites({fetchText: {'es.vtt': vtt('Hola.'), 'en.vtt': vtt('Hello.')}});
+  const result = await UDTH.udemy.videoCues({locale: 'es_ES', captions: [
+    {locale_id: 'en_US', source: 'manual', url: 'en.vtt'},
+    {locale_id: 'es_ES', source: 'auto', url: 'es.vtt'},
+  ]});
+  assert.equal(result.sourceLang, 'ES-ES');
+});
+
+test('Udemy: an arbitrary translated track is never guessed to be original', async () => {
+  const UDTH = loadSites({fetchText: {'el.vtt': vtt('Γεια σας.')}});
+  const result = await UDTH.udemy.videoCues({locale: 'en_US', captions: [
+    {locale_id: 'el_GR', source: 'auto', url: 'el.vtt'},
+  ]});
+  assert.equal(result.ok, false);
 });

@@ -142,3 +142,11 @@ test('a running job hands over its id, and focus points it at the viewer', async
   assert.deepEqual(posted, {time: 412.5});
   assert.equal(calls.at(-1), 'POST /job/abc/focus');
 });
+
+
+test('course vocabulary requests keep the course in one encoded query value', async () => {
+  const {send, calls} = transport({'GET /glossary?course=course%26other%3Dx': {ok:true, data:{count:1,terms:[{term:'MVC',thai:'รูปแบบ MVC'}]}}});
+  const result = await createApi(send).glossary('course&other=x');
+  assert.equal(result.terms[0].term, 'MVC');
+  assert.deepEqual(calls, ['GET /glossary?course=course%26other%3Dx']);
+});

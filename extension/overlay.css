@@ -111,7 +111,7 @@ html.udth-hide-native .ytp-caption-window-container {
   position: absolute;
   left: 5%;
   right: 5%;
-  bottom: 24px;
+  bottom: 10px;
   z-index: 2147483000;
   display: flex;
   flex-direction: column;
@@ -123,9 +123,9 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-line {
-  max-width: min(92%, 62ch);
-  padding: 0.45em 1.05em 0.52em;
-  border-radius: 14px;
+  max-width: min(96%, 76ch);
+  padding: 0.28em 0.7em 0.32em;
+  border-radius: 8px;
   background:
     linear-gradient(180deg, rgba(15, 20, 35, 0.84) 0%, rgba(7, 9, 17, 0.90) 100%);
   backdrop-filter: blur(16px) saturate(160%);
@@ -135,8 +135,8 @@ html.udth-hide-native .ytp-caption-window-container {
     0 0 0 1px rgba(255, 255, 255, 0.10),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   text-align: center;
-  font-size: clamp(16px, 2.25vw, 25px);
-  line-height: 1.56;
+  font-size: clamp(16px, 1.9vw, 22px);
+  line-height: 1.38;
   animation: udth-caption-in 140ms var(--udth-ease);
 }
 
@@ -206,13 +206,12 @@ html.udth-hide-native .ytp-caption-window-container {
 }
 
 .udth-en {
-  margin-top: 0.24em;
-  padding-top: 0.2em;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin-top: 0.12em;
+  padding-top: 0;
   color: var(--udth-text-2);
-  font-size: 0.76em;
+  font-size: 0.72em;
   font-weight: 400;
-  line-height: 1.42;
+  line-height: 1.3;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
@@ -1565,3 +1564,13 @@ html.udth-hide-native .ytp-caption-window-container {
   .udth-gate-spinner::before { animation-duration: 2.4s; }
   .udth-gate-card::after { animation: none; left: 0; width: 100%; opacity: 0.5; }
 }
+
+/* Source information and automatically learned course vocabulary live in the
+   menu, leaving the lesson and subtitle area unobstructed. */
+.udth-source-note { padding: 8px 14px; color: var(--udth-text-2); font-size: 12px; line-height: 1.5; }
+.udth-course-terms { margin: 0 12px 10px; padding: 8px 10px; border: 1px solid var(--udth-line); border-radius: 8px; font-size: 12px; }
+.udth-course-terms summary { cursor: pointer; min-height: 28px; display: list-item; }
+.udth-course-terms p { margin: 4px 0 8px; color: var(--udth-text-2); }
+.udth-course-terms [data-udth="terms"] { max-height: 220px; overflow-y: auto; overflow-wrap: anywhere; }
+.udth-course-terms dt { margin-top: 10px; font-weight: 600; }
+.udth-course-terms dd { margin: 3px 0 0; line-height: 1.6; }

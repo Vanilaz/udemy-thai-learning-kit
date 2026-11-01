@@ -77,6 +77,10 @@
         };
       },
 
+      glossary(course) {
+        return call("GET", `/glossary?course=${encodeURIComponent(course)}`);
+      },
+
       async engines() {
         return (await this.health()).engines;
       },

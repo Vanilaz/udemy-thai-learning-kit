@@ -491,6 +491,7 @@ UDTH.youtube = {
       cues,
       replacingAutoThai: Boolean(thai),
       sourceLang: (source.languageCode || "").toUpperCase(),
+      captionKind: source.kind === "asr" ? "auto" : "cc",
     };
   },
 };

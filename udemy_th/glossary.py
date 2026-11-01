@@ -10,6 +10,7 @@ side effect of watching the course.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from pathlib import Path
 
@@ -34,6 +35,12 @@ def normalise_key(term: str) -> str:
     if key.endswith("s") and len(key) > 4 and not key.endswith("ss"):
         key = key[:-1]
     return key
+
+
+def course_glossary_path(base: Path, course: str) -> Path:
+    """Isolate automatically learned terms; never use course text as a path."""
+    digest = hashlib.sha256(course.encode("utf-8")).hexdigest()[:24]
+    return base.parent / "by-course" / f"{digest}.json"
 
 
 class Glossary:
